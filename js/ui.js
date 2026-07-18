@@ -1,17 +1,17 @@
 /* =====================================================================
-   ui.js  ―  画面の描画と入力（Stage 2）
+   ui.js  ―  画面の描画と入力（Stage 3）
    ---------------------------------------------------------------------
    役割:
      ・ゲーム状態（Game.state）を読んで盤面・手札を描画する
-     ・開始画面 → マリガン → 先攻1ターン目案内 の流れを進める
-     ・タップ／長押し・クイック詳細・拡大詳細・案内・確認ダイアログ・ログ表示
+     ・開始画面 → マリガン → ターン進行（案内・メイン・ターン終了）を進める
+     ・クイック詳細／拡大詳細／案内／確認ダイアログ／ログ／ロスト・トラッシュ閲覧
      ・縦向き固定（横向き警告）
 
    ルール処理そのものは game.js が担当し、ここでは呼び出して結果を描画します。
 
-   Stage 2 の終わり:
-     「先攻1ターン目の案内」を表示するところまで。
-     案内タップ後のターン開始処理（気力回復・ドロー・メイン）は Stage 3。
+   Stage 3 の流れ（仕様書 9・10.4）:
+     ターン案内 →（襲撃・開始時効果は該当なしで省略）→ 気力回復 → 1枚ドロー
+     → メイン →「メイン終了」→「ターン終了」→ 上下入れ替え → 次のターン案内
    ===================================================================== */
 
 'use strict';
@@ -19,14 +19,14 @@
 /* =====================================================================
    画面の状態（UIモード）
    ===================================================================== */
-let UI_MODE = 'start';           // 'start' / 'mulligan' / 'board'
-let bottomSide = null;           // 下側（操作中）に表示している陣営
-let mulliganSide = null;         // いまマリガン中の陣営
-let mulliganSelected = new Set();// マリガンで選択中のカード uid
-let chosenFirst = 'village';     // 開始画面で選んだ先攻
+let UI_MODE = 'start';            // 'start' / 'mulligan' / 'board'
+let bottomSide = null;            // 下側（操作中）に表示している陣営
+let mulliganSide = null;          // いまマリガン中の陣営
+let mulliganSelected = new Set(); // マリガンで選択中のカード uid
+let chosenFirst = 'village';      // 開始画面で選んだ先攻
 
 /* =====================================================================
-   表示用ステータス（Stage2は補正なしなので基礎値と同じ）
+   表示用ステータス（Stage3は補正なしなので基礎値と同じ）
    ===================================================================== */
 function getDisplayStats(inst) {
   const m = inst.master;
@@ -51,7 +51,8 @@ const TYPE_LABEL = {
 };
 
 /* =====================================================================
-   カード1枚のDOMを作る（前列 front / 後列 back / 手札 hand）
+   カード1枚のDOMを作る
+   variant: 'front'（前列） / 'back'（後列） / 'hand'（手札） / 'zone'（閲覧画面）
    ===================================================================== */
 function createCardElement(inst, variant) {
   const m = inst.master;
@@ -114,12 +115,13 @@ function cacheDom() {
   dom.startBtn = document.getElementById('start-btn');
   dom.choiceBtns = Array.prototype.slice.call(document.querySelectorAll('.choice'));
 
-  // ゲーム枠
+  // ゲーム枠・上部バー
   dom.gameFrame = document.getElementById('game-frame');
+  dom.turnDisplay = document.getElementById('turn-display');
   dom.seedDisplay = document.getElementById('seed-display');
   dom.logBtn = document.getElementById('log-btn');
 
-  // 洋館（上）
+  // 上側（待機中）
   dom.oppHeader = document.getElementById('opp-header');
   dom.oppStatus = document.getElementById('opp-status');
   dom.oppTrackYoukai = document.getElementById('opp-track-youkai');
@@ -128,7 +130,7 @@ function cacheDom() {
   dom.oppBackYoukai = document.getElementById('opp-back-youkai');
   dom.oppBackHuman = document.getElementById('opp-back-human');
 
-  // 村（下）
+  // 下側（操作中）
   dom.selfTrackYoukai = document.getElementById('self-track-youkai');
   dom.selfField = document.getElementById('self-field');
   dom.selfTrackHuman = document.getElementById('self-track-human');
@@ -140,10 +142,13 @@ function cacheDom() {
   dom.selfHeaderLabel = document.getElementById('self-header-label');
   dom.selfStatus = document.getElementById('self-status');
 
-  // 手札・マリガンバー
+  // 手札・操作バー
   dom.hand = document.getElementById('hand');
   dom.mulliganBar = document.getElementById('mulligan-bar');
   dom.mulliganConfirm = document.getElementById('mulligan-confirm');
+  dom.actionBar = document.getElementById('action-bar');
+  dom.actionHint = document.getElementById('action-hint');
+  dom.actionBtn = document.getElementById('action-btn');
 
   // 盤面・重ね表示
   dom.board = document.getElementById('board');
@@ -152,6 +157,7 @@ function cacheDom() {
   dom.guideOverlay = document.getElementById('guide-overlay');
   dom.modal = document.getElementById('modal');
   dom.logPanel = document.getElementById('log-panel');
+  dom.zoneViewer = document.getElementById('zone-viewer');
   dom.orientationWarning = document.getElementById('orientation-warning');
 }
 
@@ -159,27 +165,37 @@ function cacheDom() {
    盤面の描画（ゲーム状態から）
    ===================================================================== */
 
-/** ステータス枠（山札・気力・ロスト・トラッシュ） */
+/** ステータス枠（山札・気力・ロスト・トラッシュ）
+    ロスト／トラッシュはタップで閲覧画面を開けるボタンにする（仕様書 21）*/
 function renderStatus(container, player) {
-  // Stage2 では 気力 はまだ処理しないので「--」。他は実際の枚数を表示する。
-  const items = [
-    ['山札', String(player.deck.length)],
-    ['気力', '--'],
-    ['ロスト', String(player.lost.length)],
-    ['トラッシュ', String(player.trash.length)],
-  ];
   container.innerHTML = '';
-  items.forEach(function (pair) {
+
+  const items = [
+    { key: '山札', value: String(player.deck.length), zone: null },
+    { key: '気力', value: String(player.energy), zone: null },
+    { key: 'ロスト', value: String(player.lost.length), zone: 'lost' },
+    { key: 'トラッシュ', value: String(player.trash.length), zone: 'trash' },
+  ];
+
+  items.forEach(function (item) {
     const stat = document.createElement('span');
     stat.className = 'stat';
     const k = document.createElement('span');
     k.className = 'stat__k';
-    k.textContent = pair[0];
+    k.textContent = item.key;
     const v = document.createElement('span');
     v.className = 'stat__v';
-    v.textContent = pair[1];
+    v.textContent = item.value;
     stat.appendChild(k);
     stat.appendChild(v);
+
+    // ロスト・トラッシュは押せるようにする
+    if (item.zone) {
+      stat.classList.add('stat--button');
+      stat.addEventListener('click', function () {
+        openZoneViewer(player, item.zone);
+      });
+    }
     container.appendChild(stat);
   });
 }
@@ -213,7 +229,6 @@ function renderBoard() {
   const self = st.players[bottomSide];
   const opp = st.players[oppSide];
 
-  // 上側（待機中）
   dom.oppHeader.textContent = DECKS[oppSide].label + '｜待機中';
   renderStatus(dom.oppStatus, opp);
   renderSide(opp, {
@@ -221,7 +236,6 @@ function renderBoard() {
     backYoukai: dom.oppBackYoukai, backHuman: dom.oppBackHuman,
   });
 
-  // 下側（操作中）。ヘッダーは独立領域＋陣営色。
   dom.selfHeaderLabel.textContent = DECKS[bottomSide].label + '｜操作中';
   dom.selfHeader.className = 'op-header op-header--' + bottomSide;
   renderStatus(dom.selfStatus, self);
@@ -230,18 +244,18 @@ function renderBoard() {
     backYoukai: dom.selfBackYoukai, backHuman: dom.selfBackHuman,
   });
 
-  // 手札（下側プレイヤーのもの）
   fillZone(dom.hand, self.hand, 'hand');
 }
 
-/** シード表示＋盤面描画 */
+/** 上部バー（ターン表示・シード）＋盤面を描画 */
 function renderScreen() {
+  dom.turnDisplay.textContent = Game.getTurnHeaderText();
   dom.seedDisplay.textContent = 'シード：' + Game.state.seed;
   renderBoard();
 }
 
 /* =====================================================================
-   クイック詳細（左上）／拡大詳細（中央）
+   詳細表示の共通部品
    ===================================================================== */
 let quickDetailUid = null;
 
@@ -292,6 +306,7 @@ function fillDetailBody(container, inst) {
   container.appendChild(detailBlock('効果', m.effect || '効果なし'));
 }
 
+/* ---- クイック詳細（左上） ---- */
 function openQuickDetail(inst, isHandCard) {
   const m = inst.master;
   quickDetailUid = inst.uid;
@@ -302,7 +317,7 @@ function openQuickDetail(inst, isHandCard) {
   title.textContent = m.name;
   panel.appendChild(title);
   fillDetailBody(panel, inst);
-  // 手札の「登場／使用」ボタン位置（Stage2でもまだ動作しない＝Stage4）
+  // 手札の「登場／使用」ボタン位置（Stage4で有効化）
   if (isHandCard) {
     const actionLabel = (m.type === 'human' || m.type === 'youkai') ? '登場' : '使用';
     const btn = document.createElement('div');
@@ -319,6 +334,7 @@ function closeQuickDetail() {
   dom.quickDetail.innerHTML = '';
 }
 
+/* ---- 拡大詳細（中央） ---- */
 function openExpandedDetail(inst) {
   closeQuickDetail();
   const m = inst.master;
@@ -351,13 +367,92 @@ function closeExpandedDetail() {
 }
 
 /* =====================================================================
+   ロスト・トラッシュ閲覧（仕様書 21）
+   ・古いカードが左、新しいカードが右
+   ・短いタップ：閲覧画面の中にクイック詳細
+   ・長押し：拡大詳細
+   ・閲覧中はゲーム処理を止める（閉じると再開）
+   ===================================================================== */
+function openZoneViewer(player, zoneKey) {
+  const cards = (zoneKey === 'lost') ? player.lost : player.trash;
+  const zoneName = (zoneKey === 'lost') ? 'ロスト' : 'トラッシュ';
+
+  const ov = dom.zoneViewer;
+  ov.innerHTML = '';
+
+  const box = document.createElement('div');
+  box.className = 'viewer__box';
+
+  const title = document.createElement('div');
+  title.className = 'viewer__title';
+  title.textContent = player.label + '｜' + zoneName + '（' + cards.length + '枚）';
+  box.appendChild(title);
+
+  // カード列（横スクロール。左が古い・右が新しい）
+  const row = document.createElement('div');
+  row.className = 'viewer__row';
+  if (cards.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'viewer__empty';
+    empty.textContent = 'カードはありません';
+    row.appendChild(empty);
+  } else {
+    cards.forEach(function (inst) {
+      row.appendChild(createCardElement(inst, 'zone'));
+    });
+  }
+  box.appendChild(row);
+
+  // 閲覧画面の中のクイック詳細（短いタップで中身が入る）
+  const detail = document.createElement('div');
+  detail.className = 'viewer__detail';
+  detail.id = 'viewer-detail';
+  box.appendChild(detail);
+
+  const close = document.createElement('button');
+  close.className = 'viewer__close';
+  close.textContent = '閉じる';
+  close.addEventListener('click', function (e) { e.stopPropagation(); closeZoneViewer(); });
+  box.appendChild(close);
+
+  ov.appendChild(box);
+  ov.classList.add('is-open');
+}
+
+function closeZoneViewer() {
+  dom.zoneViewer.classList.remove('is-open');
+  dom.zoneViewer.innerHTML = '';
+}
+
+/** 閲覧画面の中でカードを短くタップしたときの詳細表示 */
+function showViewerDetail(inst) {
+  const panel = document.getElementById('viewer-detail');
+  if (!panel) return;
+  panel.innerHTML = '';
+  const title = document.createElement('div');
+  title.className = 'detail__title';
+  title.textContent = inst.master.name;
+  panel.appendChild(title);
+  fillDetailBody(panel, inst);
+}
+
+/* =====================================================================
    カードへの入力（短いタップ／長押し）
-   ---------------------------------------------------------------------
-   ・マリガン中の手札 … 短いタップ＝選択／解除、長押し＝拡大詳細（クイック詳細なし）
-   ・それ以外           … 短いタップ＝クイック詳細、長押し＝拡大詳細
    ===================================================================== */
 const LONG_PRESS_MS = 1000;
 const MOVE_CANCEL_PX = 10;
+
+/** その variant のカードが、いま操作を受け付けてよいか */
+function isInputBlocked(variant) {
+  // 拡大詳細・確認ダイアログ・案内・ログ が開いている間は、どのカードも操作しない
+  if (dom.expandedDetail.classList.contains('is-open')) return true;
+  if (dom.modal.classList.contains('is-open')) return true;
+  if (dom.guideOverlay.classList.contains('is-open')) return true;
+  if (dom.logPanel.classList.contains('is-open')) return true;
+  // 閲覧画面が開いている間は、閲覧画面の中のカードだけ操作できる
+  if (dom.zoneViewer.classList.contains('is-open')) return (variant !== 'zone');
+  return false;
+}
 
 function attachCardInput(el, inst, variant) {
   const isHandCard = (variant === 'hand');
@@ -366,8 +461,7 @@ function attachCardInput(el, inst, variant) {
   function clearTimer() { if (pressTimer !== null) { clearTimeout(pressTimer); pressTimer = null; } }
 
   el.addEventListener('pointerdown', function (e) {
-    // 何かのオーバーレイが開いている間は盤面操作を止める
-    if (isAnyOverlayOpen()) return;
+    if (isInputBlocked(variant)) return;
     moved = false; longFired = false;
     startX = e.clientX; startY = e.clientY;
     clearTimer();
@@ -388,10 +482,12 @@ function attachCardInput(el, inst, variant) {
     if (longFired) return;
     if (moved) return;
     // 短いタップの処理
-    if (UI_MODE === 'mulligan' && isHandCard) {
-      toggleMulliganSelect(inst, el); // マリガン中の手札は選択トグル
+    if (variant === 'zone') {
+      showViewerDetail(inst);                // 閲覧画面の中の詳細
+    } else if (UI_MODE === 'mulligan' && isHandCard) {
+      toggleMulliganSelect(inst, el);        // マリガン中の手札は選択トグル
     } else {
-      openQuickDetail(inst, isHandCard);
+      openQuickDetail(inst, isHandCard);     // 通常のクイック詳細
     }
   });
 
@@ -399,27 +495,21 @@ function attachCardInput(el, inst, variant) {
   el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 }
 
-/** 何らかの重ね表示（拡大詳細・案内・確認・ログ）が開いているか */
-function isAnyOverlayOpen() {
-  return dom.expandedDetail.classList.contains('is-open') ||
-    dom.guideOverlay.classList.contains('is-open') ||
-    dom.modal.classList.contains('is-open') ||
-    dom.logPanel.classList.contains('is-open');
-}
-
 /* 盤面の空白タップでクイック詳細を閉じる */
 function setupBlankTapToClose() {
   dom.board.addEventListener('pointerup', function (e) {
-    if (isAnyOverlayOpen()) return;
+    if (isInputBlocked('back')) return;
     if (e.target.closest('.card')) return;
     if (quickDetailUid !== null) closeQuickDetail();
   });
 }
 
 /* =====================================================================
-   案内オーバーレイ（タップで進む）
+   案内オーバーレイ（タップで進む。仕様書 9.2）
+   ・案内中は、案内を閉じるタップ以外を受け付けない
    ===================================================================== */
 function showGuide(lines, onProceed) {
+  closeQuickDetail();
   const ov = dom.guideOverlay;
   ov.innerHTML = '';
   const box = document.createElement('div');
@@ -441,7 +531,7 @@ function showGuide(lines, onProceed) {
 }
 
 /* =====================================================================
-   確認ダイアログ（ボタンでのみ閉じる）
+   確認ダイアログ／ログ
    ===================================================================== */
 function showModal(lines, buttons) {
   const ov = dom.modal;
@@ -472,9 +562,6 @@ function closeModal() {
   dom.modal.innerHTML = '';
 }
 
-/* =====================================================================
-   ログ表示
-   ===================================================================== */
 function openLog() {
   const ov = dom.logPanel;
   ov.innerHTML = '';
@@ -500,8 +587,7 @@ function openLog() {
   box.appendChild(close);
   ov.appendChild(box);
   ov.classList.add('is-open');
-  // 開いたら最新（下）へスクロール
-  list.scrollTop = list.scrollHeight;
+  list.scrollTop = list.scrollHeight; // 最新（下）へ自動スクロール
 }
 function closeLog() {
   dom.logPanel.classList.remove('is-open');
@@ -509,10 +595,8 @@ function closeLog() {
 }
 
 /* =====================================================================
-   マリガンの進行
+   マリガンの進行（仕様書 8）
    ===================================================================== */
-
-/** マリガン選択の切り替え（枠を強調。番号は付けない） */
 function toggleMulliganSelect(inst, el) {
   if (mulliganSelected.has(inst.uid)) {
     mulliganSelected.delete(inst.uid);
@@ -523,29 +607,24 @@ function toggleMulliganSelect(inst, el) {
   }
 }
 
-function showMulliganBar() { dom.mulliganBar.hidden = false; }
-function hideMulliganBar() { dom.mulliganBar.hidden = true; }
-
-/** 指定した陣営のマリガンを始める */
 function beginMulligan(side) {
   mulliganSide = side;
   bottomSide = side;
   mulliganSelected.clear();
   UI_MODE = 'mulligan';
-  hideMulliganBar();
+  dom.mulliganBar.hidden = true;
+  dom.actionBar.hidden = true;
   renderScreen();
 
   const label = DECKS[side].label;
   showGuide(
     [label + 'のマリガン', label + '側を操作してください', 'タップして開始'],
-    function () { showMulliganBar(); } // 案内を閉じたら選択開始
+    function () { dom.mulliganBar.hidden = false; }
   );
 }
 
-/** マリガン確定ボタン */
 function onMulliganConfirm() {
   if (mulliganSelected.size === 0) {
-    // 0枚のときは確認する（仕様書 8）
     showModal(
       ['交換するカードが選ばれていません。', '0枚のままマリガンを終了しますか？'],
       [
@@ -554,8 +633,7 @@ function onMulliganConfirm() {
       ]
     );
   } else {
-    // mulliganSelected は Set（重複しない入れ物）なので、
-    // Array.from で配列に変換してから渡す。
+    // mulliganSelected は Set なので Array.from で配列に変換して渡す
     doMulliganConfirm(Array.from(mulliganSelected));
   }
 }
@@ -563,37 +641,91 @@ function onMulliganConfirm() {
 function doMulliganConfirm(uids) {
   Game.confirmMulligan(mulliganSide, uids);
   mulliganSelected.clear();
-  hideMulliganBar();
+  dom.mulliganBar.hidden = true;
 
   const first = Game.state.firstSide;
   const second = Game.state.secondSide;
 
   if (mulliganSide === first) {
-    // 先攻の確定後：手札を隠して後攻のマリガンへ
-    beginMulligan(second);
+    beginMulligan(second);   // 先攻の次は後攻のマリガン
   } else {
-    // 後攻の確定後：先攻1ターン目の案内へ
-    finishSetup();
+    startFirstTurn();        // 両者終わったら先攻1ターン目へ
   }
 }
 
-/** 先攻1ターン目の案内（Stage2 の終わり） */
-function finishSetup() {
+/* =====================================================================
+   ターン進行（仕様書 9・10.4）
+   ===================================================================== */
+
+/** 先攻1ターン目の案内（仕様書 9.2） */
+function startFirstTurn() {
   const first = Game.state.firstSide;
-  bottomSide = first;
+  bottomSide = first;          // 操作側が下になるよう上下を入れ替える
   UI_MODE = 'board';
-  hideMulliganBar();
+  dom.mulliganBar.hidden = true;
+  dom.actionBar.hidden = true;
   renderScreen();
 
   const label = DECKS[first].label;
   showGuide(
     [label + 'の先攻1ターン目', label + '側を操作してください', 'タップしてゲーム開始'],
-    function () {
-      // Stage2 はここまで。ターン開始処理（気力回復・ドロー・メイン）は Stage3 で実装。
-      // 盤面（先攻の操作画面）を表示したままにする。
-      UI_MODE = 'board';
-      renderScreen();
-    }
+    function () { beginTurnFlow(first); }
+  );
+}
+
+/**
+ * ターン開始処理（仕様書 9.3）
+ *   1. 襲撃         … 有効な追跡がないため自動省略（Stage5で実装）
+ *   2. 開始時効果   … 該当なし（Stage6で実装）
+ *   3. 気力回復
+ *   4. 1枚ドロー
+ *   5. メイン
+ */
+function beginTurnFlow(side) {
+  bottomSide = side;
+  UI_MODE = 'board';
+  Game.beginTurn(side);   // 気力回復とドローは game.js が行う
+  renderScreen();
+  showActionBar();
+}
+
+/** 下の操作バー（メイン終了／ターン終了）を、いまの段階に合わせて出す */
+function showActionBar() {
+  const st = Game.state;
+  dom.mulliganBar.hidden = true;
+  dom.actionBar.hidden = false;
+  if (st.phase === 'main') {
+    dom.actionHint.textContent = 'メイン（登場・使用はStage4以降）';
+    dom.actionBtn.textContent = 'メイン終了';
+  } else {
+    dom.actionHint.textContent = 'ターンを終えて相手に渡します';
+    dom.actionBtn.textContent = 'ターン終了';
+  }
+}
+
+/** 操作バーのボタンを押したとき */
+function onActionBtn() {
+  const st = Game.state;
+
+  if (st.phase === 'main') {
+    // メイン終了（追跡選択はStage5、終了時効果はStage6のため省略）
+    Game.endMain();
+    renderScreen();
+    showActionBar();     // 表示を「ターン終了」に変える
+    return;
+  }
+
+  // ターン終了 → 上下入れ替え → 次のターン案内（仕様書 10.4）
+  const next = Game.endTurn();
+  closeQuickDetail();
+  dom.actionBar.hidden = true;
+  bottomSide = next;     // 上下を入れ替える
+  renderScreen();
+
+  const label = DECKS[next].label;
+  showGuide(
+    [label + 'のターン', label + '側を操作してください', 'タップして開始'],
+    function () { beginTurnFlow(next); }
   );
 }
 
@@ -601,7 +733,6 @@ function finishSetup() {
    開始画面
    ===================================================================== */
 function setupStartScreen() {
-  // 先攻の選択ボタン
   dom.choiceBtns.forEach(function (btn) {
     btn.addEventListener('click', function () {
       chosenFirst = btn.dataset.side;
@@ -609,23 +740,16 @@ function setupStartScreen() {
       btn.classList.add('is-chosen');
     });
   });
-  // 初期の先攻を村にしておく（見た目でも分かるように強調）
   dom.choiceBtns.forEach(function (b) {
     if (b.dataset.side === chosenFirst) b.classList.add('is-chosen');
   });
-
   dom.startBtn.addEventListener('click', onStart);
 }
 
 function onStart() {
-  const seedVal = dom.seedInput.value;
-  Game.start(chosenFirst, seedVal);
-
-  // 画面を開始画面からゲーム画面へ切り替える
+  Game.start(chosenFirst, dom.seedInput.value);
   dom.startScreen.hidden = true;
   dom.gameFrame.hidden = false;
-
-  // 先攻のマリガンから開始
   beginMulligan(Game.state.firstSide);
 }
 
@@ -654,8 +778,8 @@ function init() {
   setupBlankTapToClose();
   dom.logBtn.addEventListener('click', openLog);
   dom.mulliganConfirm.addEventListener('click', onMulliganConfirm);
+  dom.actionBtn.addEventListener('click', onActionBtn);
 
-  // 全体で長押しメニューを抑制
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
   updateOrientation();

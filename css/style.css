@@ -655,7 +655,8 @@ html, body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.78);
+  /* 手渡し中に次のプレイヤーの手札が透けないよう、完全に不透明にする */
+  background: var(--bg);
   text-align: center;
 }
 #guide-overlay.is-open { display: flex; }
@@ -743,3 +744,125 @@ html, body {
   cursor: pointer;
 }
 .log__close:active { background: #322f4a; }
+
+
+/* =====================================================================
+   ▼▼▼ Stage 3 追加分（ターン表示・操作バー・閲覧画面） ▼▼▼
+   ===================================================================== */
+
+/* ---------------- 上部バー：ターン表示＋シード ---------------- */
+.top-bar__texts {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+#turn-display {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--text);
+  letter-spacing: 0.03em;
+}
+#seed-display { font-size: 10px; color: var(--text-dim); }
+
+/* ---------------- 操作バー（メイン終了／ターン終了） ---------------- */
+#action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--line);
+}
+#action-hint { font-size: 11px; color: var(--text-dim); }
+#action-btn {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text);
+  background: #2a2740;
+  border: 1px solid var(--text-dim);
+  border-radius: 8px;
+  cursor: pointer;
+}
+#action-btn:active { background: #35314f; }
+
+/* ---------------- ステータスのロスト・トラッシュを押せるボタンに ---------------- */
+.stat--button {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.stat--button:active { background: #201f30; }
+
+/* ---------------- ロスト・トラッシュ閲覧画面（仕様書 21） ---------------- */
+#zone-viewer {
+  position: absolute;
+  inset: 0;
+  /* 拡大詳細(60)より下、クイック詳細(30)より上に重ねる */
+  z-index: 55;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.78);
+}
+#zone-viewer.is-open { display: flex; }
+.viewer__box {
+  width: 100%;
+  max-width: 360px;
+  max-height: 82%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+.viewer__title {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+/* カード列：左が古い、右が新しい（横スクロール） */
+.viewer__row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  min-height: 74px;
+  align-items: center;
+}
+.viewer__empty { font-size: 12px; color: var(--text-dim); }
+.card--zone {
+  width: 66px;
+  height: 70px;
+  padding: 3px;
+  flex: 0 0 auto;
+}
+/* 閲覧画面の中のクイック詳細 */
+.viewer__detail {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 8px;
+  font-size: 12px;
+  min-height: 0;
+}
+.viewer__close {
+  margin-top: 12px;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text);
+  background: #26243a;
+  border: 1px solid var(--text-dim);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.viewer__close:active { background: #322f4a; }
