@@ -118,6 +118,11 @@
           <span id="action-hint"></span>
           <button id="action-btn" type="button">メイン終了</button>
         </div>
+        <!-- グッズの対象選択中に出るバー（仕様書 11.2） -->
+        <div id="target-bar" hidden>
+          <span id="target-hint"></span>
+          <button id="target-cancel" type="button">キャンセル</button>
+        </div>
         <div id="hand-label">手札</div>
         <div id="hand"></div>
       </div>
@@ -128,6 +133,9 @@
       <div id="modal"></div>
       <div id="log-panel"></div>
       <div id="zone-viewer"></div>
+
+      <!-- 使用できない理由などを数秒だけ出す表示（仕様書 5・11.4） -->
+      <div id="toast"></div>
 
     </div>
   </div>

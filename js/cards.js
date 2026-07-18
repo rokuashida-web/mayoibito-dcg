@@ -230,6 +230,10 @@ const CARD_MASTER = {
     cost: 0,
     traits: ['道具'],
     equipTo: '人間',
+    // 装備できる対象の条件（type＝人間か怪異、trait＝必要な特徴。null なら特徴の指定なし）
+    equipTarget: { type: 'human', trait: null },
+    // 装備したときの能力補正。bonusIf は「条件を満たすとさらに追加される分」
+    equipBonus: { hp: 1 },
     effect:
       '装備対象：人間。\n' +
       '体力+1。\n' +
@@ -245,6 +249,9 @@ const CARD_MASTER = {
     cost: 1,
     traits: ['村', '呪い'],
     equipTo: '怪異',
+    equipTarget: { type: 'youkai', trait: null },
+    // 基本スピード+1。自分のトラッシュが10枚以上ならさらに+1（合計+2）
+    equipBonus: { speed: 1, bonusIf: { zone: 'trash', min: 10, speed: 1 } },
     effect:
       '装備対象：怪異。\n' +
       '基本：スピード+1。\n' +
@@ -456,6 +463,9 @@ const CARD_MASTER = {
     cost: 1,
     traits: [],
     equipTo: '〈洋館〉人間',
+    equipTarget: { type: 'human', trait: '洋館' },
+    // 基本スタッツ補正なし（襲撃時のダメージ軽減は Stage5 で実装）
+    equipBonus: {},
     effect:
       '装備対象：〈洋館〉人間。基本スタッツ補正なし。\n' +
       '【襲撃時】：装備人間が受ける襲撃ダメージを2軽減。\n' +
@@ -474,6 +484,9 @@ const CARD_MASTER = {
     cost: 1,
     traits: [],
     equipTo: '〈洋館〉怪異',
+    equipTarget: { type: 'youkai', trait: '洋館' },
+    // 基本スピード+1。自分のロストが3枚以上ならさらに+1（合計+2）
+    equipBonus: { speed: 1, bonusIf: { zone: 'lost', min: 3, speed: 1 } },
     effect:
       '装備対象：〈洋館〉怪異。\n' +
       '基本：スピード+1。\n' +
