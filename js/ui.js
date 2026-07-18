@@ -1,5 +1,5 @@
 /* =====================================================================
-   ui.js  ―  画面の描画と入力（Stage 4）
+   ui.js  ―  画面の描画と入力（Stage 5）
    ---------------------------------------------------------------------
    役割:
      ・ゲーム状態（Game.state）を読んで盤面・手札を描画する
@@ -8,6 +8,12 @@
      ・縦向き固定（横向き警告）
 
    ルール処理そのものは game.js が担当し、ここでは呼び出して結果を描画します。
+
+   Stage 5 で追加（仕様書 10・15・19・22・23・24）:
+     ・追跡選択（自分の怪異＋相手の人間を選び「追跡を確定」）
+     ・襲撃の演出（約0.5秒間隔・対象を強調・進行操作をロック）
+     ・リザルト画面（勝敗理由・経過・シードコピー・再戦）
+     ・ゲームを中断（確認あり）と、対戦中の離脱確認
 
    Stage 4 で追加（仕様書 11・12.2・12.4）:
      ・手札を短くタップ → クイック詳細＋カード本体に「登場／使用」ボタン
@@ -28,6 +34,10 @@ let mulliganSelected = new Set(); // マリガンで選択中のカード uid
 let chosenFirst = 'village';      // 開始画面で選んだ先攻
 let selectedHandUid = null;       // 「登場／使用」ボタンを出している手札カード
 let targetMode = null;            // グッズの対象選択中の情報 { goods, targets }
+let trackSel = null;              // 追跡選択中の情報 { youkai, human }
+let attackHighlight = [];         // 襲撃演出で光らせるカードの uid
+let isBusy = false;               // 演出中：進行操作をロックする（仕様書 24）
+let matchInProgress = false;      // 対戦中かどうか（離脱確認に使う）
 
 /* =====================================================================
    表示用ステータス
@@ -97,6 +107,17 @@ function createCardElement(inst, variant) {
     el.classList.add('is-target');
   }
 
+  // 追跡選択中：選べるカードと、選択済みのカードを強調する（仕様書 10.1）
+  if (trackSel) {
+    if (isTrackCandidate(inst)) el.classList.add('is-candidate');
+    if (trackSel.youkai === inst || trackSel.human === inst) el.classList.add('is-track-sel');
+  }
+
+  // 襲撃の演出中：対象を強調する（仕様書 24）
+  if (attackHighlight.indexOf(inst.uid) !== -1) {
+    el.classList.add('is-attacking');
+  }
+
   // 選んだ手札カードの本体に「登場／使用」ボタンを出す（仕様書 12.2）
   if (variant === 'hand' && selectedHandUid === inst.uid && canOperateHand()) {
     el.appendChild(createActionButton(inst));
@@ -109,7 +130,8 @@ function createCardElement(inst, variant) {
 /** いま手札を操作できる状況か（自分のメイン中で、対象選択中でない） */
 function canOperateHand() {
   const st = Game.state;
-  return UI_MODE === 'board' && st && st.phase === 'main' && targetMode === null;
+  return UI_MODE === 'board' && st && st.phase === 'main' &&
+    targetMode === null && trackSel === null && !isBusy && !st.gameOver;
 }
 
 /**
@@ -185,6 +207,14 @@ function cacheDom() {
   dom.targetHint = document.getElementById('target-hint');
   dom.targetCancel = document.getElementById('target-cancel');
   dom.toast = document.getElementById('toast');
+  dom.trackBar = document.getElementById('track-bar');
+  dom.trackHint = document.getElementById('track-hint');
+  dom.trackConfirm = document.getElementById('track-confirm');
+  dom.trackSkip = document.getElementById('track-skip');
+  dom.trackBack = document.getElementById('track-back');
+  dom.quitBtn = document.getElementById('quit-btn');
+  dom.result = document.getElementById('result');
+  dom.banner = document.getElementById('banner');
 
   // 盤面・重ね表示
   dom.board = document.getElementById('board');
@@ -480,6 +510,8 @@ const MOVE_CANCEL_PX = 10;
 
 /** その variant のカードが、いま操作を受け付けてよいか */
 function isInputBlocked(variant) {
+  // リザルト表示中は盤面を操作しない
+  if (dom.result.classList.contains('is-open')) return true;
   // 拡大詳細・確認ダイアログ・案内・ログ が開いている間は、どのカードも操作しない
   if (dom.expandedDetail.classList.contains('is-open')) return true;
   if (dom.modal.classList.contains('is-open')) return true;
@@ -524,6 +556,15 @@ function attachCardInput(el, inst, variant) {
     }
     if (UI_MODE === 'mulligan' && isHandCard) {
       toggleMulliganSelect(inst, el);        // マリガン中の手札は選択トグル
+      return;
+    }
+    // 演出中は選択・使用の操作を受け付けない（詳細の確認は可能・仕様書 24）
+    if (isBusy) { openQuickDetail(inst, false); return; }
+
+    // 追跡選択中（仕様書 10.1・12.4：クイック詳細は出さない）
+    if (trackSel) {
+      if (isHandCard) return;                // 手札は反応させない
+      toggleTrackSelect(inst);
       return;
     }
     // グッズの対象選択中（仕様書 12.4：クイック詳細は出さない）
@@ -799,6 +840,305 @@ function onTargetCancel() {
 }
 
 /* =====================================================================
+   追跡選択（仕様書 10.1）
+   ---------------------------------------------------------------------
+   ・自分の怪異1体と、相手の人間1体を選ぶ
+   ・短いタップで選択／解除、長押しは拡大詳細、クイック詳細は出さない
+   ・2枚そろうと「追跡を確定」が押せる
+   ・確定前は「メインに戻る」「追跡せず終了」が可能
+   ===================================================================== */
+
+/** そのカードが追跡の選択対象になり得るか */
+function isTrackCandidate(inst) {
+  if (!trackSel) return false;
+  const oppSide = Game.otherSide(bottomSide);
+  // 自分の怪異
+  if (inst.owner === bottomSide && inst.master.type === 'youkai') return true;
+  // 相手の人間
+  if (inst.owner === oppSide && inst.master.type === 'human') return true;
+  return false;
+}
+
+/** 追跡選択を開始する */
+function enterTrackingMode() {
+  trackSel = { youkai: null, human: null };
+  closeQuickDetail();
+  dom.actionBar.hidden = true;
+  dom.targetBar.hidden = true;
+  dom.trackBar.hidden = false;
+  updateTrackBar();
+  renderScreen();
+}
+
+/** カードを選択／解除する */
+function toggleTrackSelect(inst) {
+  if (!isTrackCandidate(inst)) return;
+
+  if (inst.owner === bottomSide) {
+    // 自分の怪異（すでに同じカードを選んでいたら解除）
+    trackSel.youkai = (trackSel.youkai === inst) ? null : inst;
+  } else {
+    // 相手の人間
+    trackSel.human = (trackSel.human === inst) ? null : inst;
+  }
+  updateTrackBar();
+  renderScreen();
+}
+
+/** 追跡バーの表示を、選択状況に合わせて更新する */
+function updateTrackBar() {
+  const y = trackSel.youkai ? trackSel.youkai.master.name : '未選択';
+  const h = trackSel.human ? trackSel.human.master.name : '未選択';
+  dom.trackHint.textContent = '怪異：' + y + '／相手の人間：' + h;
+
+  const ready = !!(trackSel.youkai && trackSel.human);
+  dom.trackConfirm.disabled = !ready;
+  dom.trackConfirm.classList.toggle('is-disabled', !ready);
+}
+
+/** 追跡を確定する（確定後は取り消せない） */
+function onTrackConfirm() {
+  if (!trackSel.youkai || !trackSel.human) return;
+  Game.setTracking(bottomSide, trackSel.youkai, trackSel.human);
+  exitTrackingMode();
+  Game.toEndPhase();
+  renderScreen();
+  showActionBar();
+}
+
+/** 追跡せずにターン終了へ */
+function onTrackSkip() {
+  Game.skipTracking(bottomSide);
+  exitTrackingMode();
+  Game.toEndPhase();
+  renderScreen();
+  showActionBar();
+}
+
+/** メインに戻る（確定前のみ） */
+function onTrackBack() {
+  exitTrackingMode();
+  Game.backToMain();
+  renderScreen();
+  showActionBar();
+}
+
+function exitTrackingMode() {
+  trackSel = null;
+  dom.trackBar.hidden = true;
+}
+
+/* =====================================================================
+   襲撃の演出（仕様書 15・24）
+   ---------------------------------------------------------------------
+   約0.5秒間隔で段階を進めます。演出中は進行操作をロックしますが、
+   詳細・ログ・ロスト／トラッシュの確認はできます。
+   ===================================================================== */
+const STEP_MS = 500;
+
+/** 画面中央に短い見出しを出す（襲撃など） */
+function showBanner(text) {
+  dom.banner.textContent = text;
+  dom.banner.classList.add('is-open');
+}
+function hideBanner() {
+  dom.banner.classList.remove('is-open');
+  dom.banner.textContent = '';
+}
+
+/**
+ * 襲撃を段階的に処理する。
+ * @param {object} info  Game.prepareAttack の結果
+ * @param {function} done 終わったときに呼ぶ処理
+ */
+function playAttack(info, done) {
+  isBusy = true;
+  attackHighlight = [info.attacker.uid, info.defender.uid];
+  showBanner('襲撃');
+  renderScreen();
+
+  // 1. ダメージを与える
+  setTimeout(function () {
+    Game.applyAttackDamage(info);
+    renderScreen();
+    showToast(
+      info.attacker.master.name + ' → ' + info.defender.master.name +
+      '：' + info.finalToHuman + 'ダメージ／反撃 ' + info.finalToYoukai
+    );
+
+    // 2. 倒れたカードを移動する
+    setTimeout(function () {
+      Game.finishAttack(info);
+      renderScreen();
+
+      // 3. 演出を終える
+      setTimeout(function () {
+        attackHighlight = [];
+        hideBanner();
+        isBusy = false;
+        renderScreen();
+        done();
+      }, STEP_MS);
+    }, STEP_MS);
+  }, STEP_MS);
+}
+
+/* =====================================================================
+   リザルト（仕様書 22）
+   ===================================================================== */
+function showResult() {
+  const st = Game.state;
+  const g = st.gameOver;
+  matchInProgress = false;
+
+  const ov = dom.result;
+  ov.innerHTML = '';
+
+  const box = document.createElement('div');
+  box.className = 'result__box';
+
+  // 勝者／引き分け
+  const head = document.createElement('div');
+  head.className = 'result__head';
+  head.textContent = g.draw ? '引き分け' : DECKS[g.winner].label + 'の勝利';
+  box.appendChild(head);
+
+  // 勝敗理由（複数あればすべて表示）
+  const reasons = document.createElement('div');
+  reasons.className = 'result__reasons';
+  g.losers.forEach(function (l) {
+    const row = document.createElement('div');
+    row.textContent = DECKS[l.side].label + 'の敗北理由：' + l.reasons.join('／');
+    reasons.appendChild(row);
+  });
+  box.appendChild(reasons);
+
+  // 経過・決着
+  const info = document.createElement('div');
+  info.className = 'result__info';
+  const sideLabel = g.currentSide ? DECKS[g.currentSide].shortLabel : '―';
+  info.appendChild(makeResultRow('経過', '通算' + g.turnCount + 'ターン／第' + g.round + '巡'));
+  info.appendChild(makeResultRow('決着', sideLabel + 'の第' + g.sideTurn + 'ターン・' + g.phaseLabel));
+
+  ['village', 'mansion'].forEach(function (side) {
+    const p = st.players[side];
+    info.appendChild(makeResultRow(
+      DECKS[side].label,
+      'ロスト' + p.lost.length + '／山札' + p.deck.length + '／手札' + p.hand.length
+    ));
+  });
+  info.appendChild(makeResultRow('シード', st.seed));
+  box.appendChild(info);
+
+  // ボタン
+  const btns = document.createElement('div');
+  btns.className = 'result__buttons';
+
+  btns.appendChild(makeResultButton('シードをコピー', function () {
+    copySeed(st.seed);
+  }));
+  btns.appendChild(makeResultButton('ログを確認', function () { openLog(); }));
+  btns.appendChild(makeResultButton('同じデッキでもう一度対戦', function () { rematch(); }));
+  btns.appendChild(makeResultButton('開始画面へ戻る', function () { backToStart(); }));
+  box.appendChild(btns);
+
+  ov.appendChild(box);
+  ov.classList.add('is-open');
+}
+
+function makeResultRow(label, value) {
+  const row = document.createElement('div');
+  row.className = 'result__row';
+  const l = document.createElement('span');
+  l.className = 'result__label';
+  l.textContent = label;
+  const v = document.createElement('span');
+  v.className = 'result__value';
+  v.textContent = value;
+  row.appendChild(l); row.appendChild(v);
+  return row;
+}
+
+function makeResultButton(label, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'result__btn';
+  b.textContent = label;
+  b.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
+  return b;
+}
+
+/** シードをクリップボードへコピーする */
+function copySeed(seed) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(seed).then(function () {
+      showToast('シードをコピーしました：' + seed);
+    }, function () {
+      showToast('コピーできませんでした。シード：' + seed);
+    });
+  } else {
+    showToast('シード：' + seed);
+  }
+}
+
+/** 同じデッキ・同じ先攻で、新しいシードでもう一度対戦する（仕様書 22） */
+function rematch() {
+  const firstSide = Game.state.firstSide;
+  dom.result.classList.remove('is-open');
+  dom.result.innerHTML = '';
+  closeLog();
+  resetUiState();
+  Game.start(firstSide, '');       // シードは空欄＝新しく自動生成
+  matchInProgress = true;
+  beginMulligan(Game.state.firstSide);  // 開始画面を経由しない
+}
+
+/** 開始画面へ戻る */
+function backToStart() {
+  dom.result.classList.remove('is-open');
+  dom.result.innerHTML = '';
+  closeLog();
+  resetUiState();
+  matchInProgress = false;
+  dom.gameFrame.hidden = true;
+  dom.startScreen.hidden = false;
+}
+
+/** 画面の一時的な状態をすべて初期化する */
+function resetUiState() {
+  UI_MODE = 'start';
+  selectedHandUid = null;
+  targetMode = null;
+  trackSel = null;
+  attackHighlight = [];
+  isBusy = false;
+  mulliganSelected.clear();
+  closeQuickDetail();
+  closeExpandedDetail();
+  closeZoneViewer();
+  closeModal();
+  hideBanner();
+  dom.mulliganBar.hidden = true;
+  dom.actionBar.hidden = true;
+  dom.targetBar.hidden = true;
+  dom.trackBar.hidden = true;
+}
+
+/* =====================================================================
+   ゲームを中断（仕様書 23）
+   ===================================================================== */
+function onQuit() {
+  if (isBusy) return;
+  showModal(
+    ['対戦を中断して開始画面へ戻りますか？', '現在の対戦内容は失われます。'],
+    [
+      { label: '中断する', onClick: function () { closeModal(); backToStart(); } },
+      { label: 'やめる', onClick: function () { closeModal(); } },
+    ]
+  );
+}
+
+/* =====================================================================
    ターン進行（仕様書 9・10.4）
    ===================================================================== */
 
@@ -831,10 +1171,49 @@ function beginTurnFlow(side) {
   UI_MODE = 'board';
   selectedHandUid = null;   // 前のターンの選択状態を消す
   targetMode = null;
+  trackSel = null;
   dom.targetBar.hidden = true;
-  Game.beginTurn(side);   // 気力回復とドローは game.js が行う
+  dom.trackBar.hidden = true;
+  dom.actionBar.hidden = true;
+
+  Game.beginTurn(side);     // ターン数を進める
   renderScreen();
+
+  // 1. 前の自分のターンに指定した追跡による襲撃（仕様書 15.1）
+  //    有効な追跡がなければ自動で省略される
+  const info = Game.prepareAttack(side);
+  if (info) {
+    playAttack(info, function () { afterAttack(side); });
+  } else {
+    afterAttack(side);
+  }
+}
+
+/** 襲撃のあと：勝敗を確認し、続くなら気力回復とドローへ */
+function afterAttack(side) {
+  if (Game.state.gameOver) { finishWithResult(); return; }
+
+  // 2. 開始時効果 … Stage6 で実装
+  // 3. 気力回復 → 4. 1枚ドロー（仕様書 9.3）
+  Game.turnStartResources(side);
+  renderScreen();
+
+  if (Game.state.gameOver) { finishWithResult(); return; }
+
+  // 5. メインへ
   showActionBar();
+}
+
+/** 決着したとき：約1秒だけ盤面を見せてからリザルトを出す */
+function finishWithResult() {
+  isBusy = true;
+  dom.actionBar.hidden = true;
+  dom.trackBar.hidden = true;
+  dom.targetBar.hidden = true;
+  setTimeout(function () {
+    isBusy = false;
+    showResult();
+  }, 1000);
 }
 
 /** 下の操作バー（メイン終了／ターン終了）を、いまの段階に合わせて出す */
@@ -853,13 +1232,20 @@ function showActionBar() {
 
 /** 操作バーのボタンを押したとき */
 function onActionBtn() {
+  if (isBusy) return;   // 演出中は進行できない（仕様書 24）
   const st = Game.state;
 
   if (st.phase === 'main') {
-    // メイン終了（追跡選択はStage5、終了時効果はStage6のため省略）
-    Game.endMain();
+    // メイン終了 → 追跡選択へ（対象がいなければ自動でターン終了待ちへ）
+    const nextPhase = Game.endMain();
+    closeQuickDetail();
+    selectedHandUid = null;
     renderScreen();
-    showActionBar();     // 表示を「ターン終了」に変える
+    if (nextPhase === 'tracking') {
+      enterTrackingMode();
+    } else {
+      showActionBar();   // 表示を「ターン終了」に変える
+    }
     return;
   }
 
@@ -896,7 +1282,9 @@ function setupStartScreen() {
 }
 
 function onStart() {
+  resetUiState();
   Game.start(chosenFirst, dom.seedInput.value);
+  matchInProgress = true;
   dom.startScreen.hidden = true;
   dom.gameFrame.hidden = false;
   beginMulligan(Game.state.firstSide);
@@ -929,6 +1317,17 @@ function init() {
   dom.mulliganConfirm.addEventListener('click', onMulliganConfirm);
   dom.actionBtn.addEventListener('click', onActionBtn);
   dom.targetCancel.addEventListener('click', onTargetCancel);
+  dom.trackConfirm.addEventListener('click', onTrackConfirm);
+  dom.trackSkip.addEventListener('click', onTrackSkip);
+  dom.trackBack.addEventListener('click', onTrackBack);
+  dom.quitBtn.addEventListener('click', onQuit);
+
+  // 対戦中だけ、再読み込みやタブを閉じるときに確認を出す（仕様書 23）
+  window.addEventListener('beforeunload', function (e) {
+    if (!matchInProgress) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
 
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 

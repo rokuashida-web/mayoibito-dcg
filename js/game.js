@@ -1,5 +1,5 @@
 /* =====================================================================
-   game.js  ―  ゲームのルール処理（Stage 4）
+   game.js  ―  ゲームのルール処理（Stage 5）
    ---------------------------------------------------------------------
    このファイルは「ルール処理だけ」を担当します。画面表示は書きません。
    （画面表示は ui.js が担当します。処理と表示を分けるためです。）
@@ -24,8 +24,13 @@
      ・イベントの使用（気力を払い、最後にトラッシュへ）
      ・使用できない理由の判定（気力不足・盤面上限・装備対象なし）
 
-   Stage 5 以降で実装（今回はやらない）:
-     ・追跡・襲撃・致死処理・勝敗判定
+   Stage 5 で追加（仕様書 10・14・15・16・19）:
+     ・追跡（自分の怪異1体＋相手の人間1体を指定）
+     ・襲撃（同時ダメージ・軽減・致死の同時処理）
+     ・場を離れる処理（装備グッズもトラッシュへ／状態リセット）
+     ・勝敗判定（ロスト上限／人間0体／山札0枚、同時なら引き分け）
+
+   Stage 6 で実装（今回はやらない）:
      ・【登場時】【常在】【場を離れた時】などのカード効果
    ===================================================================== */
 
@@ -157,7 +162,15 @@ const Game = {
       turnCount: 0,        // 通算ターン数（仕様書 9.1）
       sideTurnCount: { village: 0, mansion: 0 }, // 各陣営の「第Nターン」
       currentSide: null,   // いまのターンプレイヤー
-      phase: 'setup',      // 'setup' / 'main' / 'end'（メイン終了後）
+      // 'setup' / 'main' / 'tracking'（追跡選択中）/ 'end'（ターン終了待ち）
+      phase: 'setup',
+
+      // 追跡ペア。各プレイヤー1組まで（仕様書 10.1）
+      // 例：{ youkai: 怪異インスタンス, human: 相手人間インスタンス }
+      tracking: { village: null, mansion: null },
+
+      // 決着したらここに結果が入る。入ったら以降の処理は止める（仕様書 19）
+      gameOver: null,
     };
     return this.state;
   },
@@ -211,12 +224,20 @@ const Game = {
     const p = st.players[side];
 
     if (p.deck.length === 0) {
-      st.log.push('ドロー：' + p.label + ' 山札が0枚のため引けません（敗北判定はStage5で実装）');
+      // すでに0枚なら、この時点で敗北しているはず（念のための保険）
+      this.checkVictory('ドロー中');
       return null;
     }
     const card = p.deck.shift();
     p.hand.push(card);
     st.log.push('ドロー：' + p.label + ' ' + card.master.name);
+
+    // 「山札が0枚になった瞬間」に敗北する（仕様書 6）
+    // 最後の1枚を手札へ移す処理は行い、その直後に判定する。
+    if (p.deck.length === 0) {
+      st.log.push('山札が0枚になりました：' + p.label);
+      this.checkVictory('ドロー中');
+    }
     return card;
   },
 
@@ -271,18 +292,46 @@ const Game = {
       ' 第' + st.sideTurnCount[side] + 'ターン 開始'
     );
 
-    // 3. 気力回復 → 4. 1枚ドロー
-    this.gainEnergy(side);
-    this.drawOne(side);
-
     return st;
   },
 
-  /** メイン終了（仕様書 10.4 の手順1）。追跡選択・終了時効果は Stage 5・6。 */
+  /**
+   * ターン開始時の気力回復とドロー（仕様書 9.3 の 3〜4）。
+   * 襲撃の演出を先に見せられるよう、beginTurn とは分けています。
+   */
+  turnStartResources: function (side) {
+    if (this.state.gameOver) return; // 決着していたら何もしない
+    this.gainEnergy(side);
+    this.drawOne(side);
+  },
+
+  /**
+   * メイン終了（仕様書 10.4 の手順1）。
+   * 自分の怪異が0体、または相手の人間が0体なら追跡選択を自動省略します（仕様書 10.1）。
+   */
   endMain: function () {
     const st = this.state;
-    st.phase = 'end';
+    const me = st.players[st.currentSide];
+    const opp = st.players[otherSide(st.currentSide)];
+
     st.log.push('メイン終了：' + DECKS[st.currentSide].label);
+
+    const canTrack = (me.youkai.length > 0 && opp.humans.length > 0);
+    st.phase = canTrack ? 'tracking' : 'end';
+    if (!canTrack) {
+      st.log.push('追跡選択：対象がいないため省略');
+    }
+    return st.phase;
+  },
+
+  /** 追跡選択からメインへ戻る（確定前のみ・仕様書 10.4） */
+  backToMain: function () {
+    this.state.phase = 'main';
+  },
+
+  /** 追跡を終えてターン終了待ちへ */
+  toEndPhase: function () {
+    this.state.phase = 'end';
   },
 
   /** ターン終了 → 手番を相手に渡す（仕様書 10.4 の手順5〜7） */
@@ -522,12 +571,294 @@ const Game = {
     return { ok: true };
   },
 
+  /* =============================================================
+     勝敗判定（仕様書 19）
+     -------------------------------------------------------------
+     敗北条件は3つ。
+       1. フィールドが定めたロスト上限に達した（村5／洋館4）
+       2. 自分の場の人間が0体になった
+       3. 自分の山札が0枚になった
+     各処理の直後に呼び、両者が同時に満たしたら引き分けにします。
+     @param phaseLabel 決着した場面の名前（リザルトに表示する）
+     ============================================================= */
+  checkVictory: function (phaseLabel) {
+    const st = this.state;
+    if (!st || st.gameOver) return st ? st.gameOver : null; // すでに決着済み
+
+    const losers = [];
+    ['village', 'mansion'].forEach(function (side) {
+      const p = st.players[side];
+      const reasons = [];
+
+      const limit = p.field.master.lostLimit;
+      if (typeof limit === 'number' && p.lost.length >= limit) {
+        reasons.push('ロスト上限到達');
+      }
+      if (p.humans.length === 0) {
+        reasons.push('場の人間が0体');
+      }
+      if (p.deck.length === 0) {
+        reasons.push('山札が0枚');
+      }
+      if (reasons.length > 0) losers.push({ side: side, reasons: reasons });
+    });
+
+    if (losers.length === 0) return null;
+
+    let result;
+    if (losers.length === 2) {
+      // 両者が同じ処理で条件を満たしたら引き分け
+      result = {
+        draw: true,
+        winner: null,
+        losers: losers,
+        phaseLabel: phaseLabel,
+      };
+      st.log.push('決着：引き分け（' +
+        losers.map(function (l) { return DECKS[l.side].label + '＝' + l.reasons.join('／'); }).join('、') + '）');
+    } else {
+      const loser = losers[0];
+      const winner = otherSide(loser.side);
+      result = {
+        draw: false,
+        winner: winner,
+        losers: losers,
+        phaseLabel: phaseLabel,
+      };
+      st.log.push('決着：' + DECKS[winner].label + 'の勝利（' +
+        DECKS[loser.side].label + 'の敗北理由：' + loser.reasons.join('／') + '）');
+    }
+
+    // リザルト表示用に、決着時点の情報を控えておく（仕様書 22）
+    result.turnCount = st.turnCount;
+    result.round = Math.ceil(st.turnCount / 2);      // 巡目
+    result.currentSide = st.currentSide;
+    result.sideTurn = st.currentSide ? st.sideTurnCount[st.currentSide] : 0;
+
+    st.gameOver = result;
+    return result;
+  },
+
+  /* =============================================================
+     カードが場を離れる処理（仕様書 16・14）
+     -------------------------------------------------------------
+     ・人間はロストへ、怪異はトラッシュへ
+     ・装備グッズは本体の直後にトラッシュへ
+     ・蓄積ダメージ・追跡・一時補正はリセット
+     ============================================================= */
+  _leaveField: function (inst) {
+    const st = this.state;
+    const p = st.players[inst.owner];
+
+    // 場（人間エリア／怪異エリア）から取り除く
+    const zone = (inst.master.type === 'human') ? p.humans : p.youkai;
+    const i = zone.indexOf(inst);
+    if (i !== -1) zone.splice(i, 1);
+
+    // 装備していたグッズを覚えておく（本体の直後にトラッシュへ送るため）
+    const goods = inst.equippedGoods;
+
+    // 場を離れるときに状態をリセットする（仕様書 14）
+    inst.accumulatedDamage = 0;
+    inst.tracking = false;
+    inst.equippedGoods = null;
+
+    // 人間はロスト、怪異はトラッシュ
+    if (inst.master.type === 'human') {
+      p.lost.push(inst);
+      st.log.push('移動：' + p.label + ' ' + inst.master.name + ' → ロスト（' + p.lost.length + '枚）');
+    } else {
+      p.trash.push(inst);
+      st.log.push('移動：' + p.label + ' ' + inst.master.name + ' → トラッシュ');
+    }
+
+    // グッズは本体の直後にトラッシュへ（仕様書 16.1・16.2）
+    if (goods) {
+      goods.equippedTo = null;
+      p.trash.push(goods);
+      st.log.push('移動：' + p.label + ' ' + goods.master.name + '（装備）→ トラッシュ');
+    }
+
+    // 追跡ペアに含まれていたら解除する（仕様書 10.3）
+    this._clearTrackingWith(inst);
+  },
+
+  /** そのカードが関わっている追跡を解除する */
+  _clearTrackingWith: function (inst) {
+    const st = this.state;
+    ['village', 'mansion'].forEach(function (side) {
+      const pair = st.tracking[side];
+      if (!pair) return;
+      if (pair.youkai === inst || pair.human === inst) {
+        // 相方の追跡表示も戻す
+        if (pair.youkai !== inst) pair.youkai.tracking = false;
+        if (pair.human !== inst) pair.human.tracking = false;
+        st.tracking[side] = null;
+        st.log.push('追跡解除：' + DECKS[side].label + '（対象が場を離れたため）');
+      }
+    });
+  },
+
+  /* =============================================================
+     追跡の確定（仕様書 10.1）
+     -------------------------------------------------------------
+     自分の怪異1体と、相手の人間1体を指定します。
+     確定後は取り消せません。
+     ============================================================= */
+  setTracking: function (side, youkaiInst, humanInst) {
+    const st = this.state;
+    st.tracking[side] = { youkai: youkaiInst, human: humanInst };
+    youkaiInst.tracking = true;
+    humanInst.tracking = true;
+    st.log.push('追跡：' + DECKS[side].label + ' ' + youkaiInst.master.name +
+      ' → ' + humanInst.master.name);
+  },
+
+  /** 追跡せずにターンを終える */
+  skipTracking: function (side) {
+    this.state.log.push('追跡：' + DECKS[side].label + ' 追跡なし');
+  },
+
+  /* =============================================================
+     襲撃の準備（仕様書 15.1〜15.4）
+     -------------------------------------------------------------
+     ダメージを「計算するだけ」で、まだ適用はしません。
+     （画面側が0.5秒ずつ演出を見せられるように、段階を分けています）
+     ============================================================= */
+  prepareAttack: function (side) {
+    const st = this.state;
+    const pair = st.tracking[side];
+    if (!pair) return null; // 有効な追跡がなければ襲撃を自動省略
+
+    const attacker = pair.youkai;  // 自分の怪異
+    const defender = pair.human;   // 相手の人間
+
+    const aStats = this.getStats(attacker);
+    const dStats = this.getStats(defender);
+
+    // 襲撃ダメージは「現在スピード」。互いに同時に与える（仕様書 14・15.3）
+    const rawToHuman = aStats.curSpeed;
+    const rawToYoukai = dStats.curSpeed;
+
+    // 軽減（仕様書 15.4）。いまは装備グッズによる軽減のみ。
+    const redHuman = this._calcReduction(defender);
+    const redYoukai = this._calcReduction(attacker);
+
+    return {
+      side: side,
+      attacker: attacker,
+      defender: defender,
+      rawToHuman: rawToHuman,
+      rawToYoukai: rawToYoukai,
+      reductionHuman: redHuman.total,
+      reductionYoukai: redYoukai.total,
+      // 最終ダメージ ＝ max(0, 元ダメージ - 軽減合計)
+      finalToHuman: Math.max(0, rawToHuman - redHuman.total),
+      finalToYoukai: Math.max(0, rawToYoukai - redYoukai.total),
+      usedGoods: redHuman.usedGoods.concat(redYoukai.usedGoods),
+    };
+  },
+
+  /** 装備グッズによる軽減量を計算する（仕様書 15.4） */
+  _calcReduction: function (inst) {
+    const goods = inst.equippedGoods;
+    if (!goods || !goods.master.damageReduction) {
+      return { total: 0, usedGoods: [] };
+    }
+    const rule = goods.master.damageReduction;
+    let amount = rule.amount || 0;
+
+    // 条件付きで軽減量が増える（例：自分の場にイザベラがいれば4軽減）
+    if (rule.ifCardOnField) {
+      const p = this.state.players[inst.owner];
+      const onField = p.youkai.concat(p.humans).some(function (c) {
+        return c.cardId === rule.ifCardOnField;
+      });
+      if (onField) amount = rule.boosted;
+    }
+    return { total: amount, usedGoods: rule.trashAfterUse ? [{ host: inst, goods: goods }] : [] };
+  },
+
+  /* =============================================================
+     襲撃のダメージ適用（仕様書 15.2 の 5〜6）
+     -------------------------------------------------------------
+     両者へ同時にダメージを与えます。
+     軽減に使った《小さな鍵》はここでトラッシュへ移りますが、
+     確定した軽減値はすでに計算済みなので影響しません。
+     ============================================================= */
+  applyAttackDamage: function (info) {
+    const st = this.state;
+
+    st.log.push('襲撃：' + DECKS[info.side].label + ' ' + info.attacker.master.name +
+      ' → ' + info.defender.master.name);
+
+    if (info.reductionHuman > 0) {
+      st.log.push('軽減：' + info.defender.master.name + ' ' +
+        info.rawToHuman + ' - ' + info.reductionHuman + ' = ' + info.finalToHuman);
+    }
+
+    // 同時ダメージ
+    info.defender.accumulatedDamage += info.finalToHuman;
+    info.attacker.accumulatedDamage += info.finalToYoukai;
+
+    st.log.push('ダメージ：' + info.defender.master.name + ' に ' + info.finalToHuman +
+      '／' + info.attacker.master.name + ' に ' + info.finalToYoukai + '（反撃）');
+
+    // 軽減に使ったグッズをトラッシュへ
+    info.usedGoods.forEach(function (u) {
+      u.host.equippedGoods = null;
+      u.goods.equippedTo = null;
+      st.players[u.goods.owner].trash.push(u.goods);
+      st.log.push('移動：' + u.goods.master.name + '（軽減に使用）→ トラッシュ');
+    });
+  },
+
+  /* =============================================================
+     襲撃後の致死処理（仕様書 15.2 の 7〜9）
+     -------------------------------------------------------------
+     現在体力0以下のカードを「同時に」場から移動し、勝敗を判定します。
+     生き残ったカードは追跡を解除し、通常列の右端へ戻します。
+     ============================================================= */
+  finishAttack: function (info) {
+    const st = this.state;
+    const self = this;
+
+    // 倒れたカードを先に「まとめて」調べる（同時処理のため）
+    const dying = [];
+    [info.attacker, info.defender].forEach(function (c) {
+      if (self.getStats(c).curHp <= 0) dying.push(c);
+    });
+
+    // まとめて移動する
+    dying.forEach(function (c) { self._leaveField(c); });
+
+    // 生存者は追跡を解除し、通常列の右端へ戻す（仕様書 15.2 の 9）
+    [info.attacker, info.defender].forEach(function (c) {
+      if (dying.indexOf(c) !== -1) return;
+      c.tracking = false;
+      const p = st.players[c.owner];
+      const zone = (c.master.type === 'human') ? p.humans : p.youkai;
+      const i = zone.indexOf(c);
+      if (i !== -1) { zone.splice(i, 1); zone.push(c); } // 右端へ移す
+    });
+
+    // この襲撃の追跡ペアは解決済みなので消す
+    st.tracking[info.side] = null;
+
+    // 勝敗判定
+    this.checkVictory('襲撃中');
+
+    return dying;
+  },
+
   /** ヘッダー用の文字列（例：ターン5｜村 第3ターン｜メイン）※仕様書 9.1 */
   getTurnHeaderText: function () {
     const st = this.state;
     if (!st || st.turnCount === 0) return '';
     const shortLabel = DECKS[st.currentSide].shortLabel;
-    const phaseLabel = (st.phase === 'main') ? 'メイン' : 'ターン終了';
+    let phaseLabel = 'メイン';
+    if (st.phase === 'tracking') phaseLabel = '追跡選択';
+    else if (st.phase === 'end') phaseLabel = 'ターン終了';
     return 'ターン' + st.turnCount + '｜' + shortLabel +
       ' 第' + st.sideTurnCount[st.currentSide] + 'ターン｜' + phaseLabel;
   },

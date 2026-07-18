@@ -50,7 +50,10 @@
           <span id="turn-display"></span>
           <span id="seed-display"></span>
         </span>
-        <button id="log-btn" type="button">ログ</button>
+        <span class="top-bar__btns">
+          <button id="log-btn" type="button">ログ</button>
+          <button id="quit-btn" type="button">中断</button>
+        </span>
       </div>
 
       <!-- ============ 盤面 ============ -->
@@ -63,17 +66,19 @@
             <span class="side__status" id="opp-status"></span>
           </div>
 
-          <!-- 後列（追跡なし 怪異最大3／人間最大3）※洋館は後列が上 -->
+          <!-- 後列（追跡なし 人間最大3／怪異最大3）※上側は左右を反転して鏡合わせにする
+               左レーン＝自分の怪異と相手の人間／右レーン＝自分の人間と相手の怪異 -->
           <div class="lane lane--back">
-            <div class="back-group back-group--youkai" id="opp-back-youkai"></div>
             <div class="back-group back-group--human" id="opp-back-human"></div>
+            <div class="back-group back-group--youkai" id="opp-back-youkai"></div>
           </div>
 
-          <!-- 前列（左：追跡怪異／中央：フィールド固定／右：追跡人間）※中央側を向く -->
+          <!-- 前列（左：追跡人間／中央：フィールド固定／右：追跡怪異）※中央側を向く
+               下側と鏡合わせにすることで、襲撃する怪異と狙われる人間が縦に並ぶ -->
           <div class="lane lane--front">
-            <div class="front-slot front-slot--youkai" id="opp-track-youkai"></div>
-            <div class="front-slot front-slot--field" id="opp-field"></div>
             <div class="front-slot front-slot--human" id="opp-track-human"></div>
+            <div class="front-slot front-slot--field" id="opp-field"></div>
+            <div class="front-slot front-slot--youkai" id="opp-track-youkai"></div>
           </div>
         </div>
 
@@ -118,6 +123,16 @@
           <span id="action-hint"></span>
           <button id="action-btn" type="button">メイン終了</button>
         </div>
+        <!-- 追跡選択中に出るバー（仕様書 10.1） -->
+        <div id="track-bar" hidden>
+          <span id="track-hint"></span>
+          <span class="track-bar__btns">
+            <button id="track-confirm" type="button">追跡を確定</button>
+            <button id="track-skip" type="button">追跡せず終了</button>
+            <button id="track-back" type="button">メインに戻る</button>
+          </span>
+        </div>
+
         <!-- グッズの対象選択中に出るバー（仕様書 11.2） -->
         <div id="target-bar" hidden>
           <span id="target-hint"></span>
@@ -133,6 +148,12 @@
       <div id="modal"></div>
       <div id="log-panel"></div>
       <div id="zone-viewer"></div>
+
+      <!-- 襲撃などの見出しを一時的に出す表示（仕様書 24） -->
+      <div id="banner"></div>
+
+      <!-- リザルト画面（仕様書 22） -->
+      <div id="result"></div>
 
       <!-- 使用できない理由などを数秒だけ出す表示（仕様書 5・11.4） -->
       <div id="toast"></div>

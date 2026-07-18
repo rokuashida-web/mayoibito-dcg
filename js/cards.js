@@ -464,8 +464,12 @@ const CARD_MASTER = {
     traits: [],
     equipTo: '〈洋館〉人間',
     equipTarget: { type: 'human', trait: '洋館' },
-    // 基本スタッツ補正なし（襲撃時のダメージ軽減は Stage5 で実装）
+    // 基本スタッツ補正なし
     equipBonus: {},
+    // 【襲撃時】受ける襲撃ダメージを軽減する（仕様書 15.4）
+    // ・通常は2軽減／自分の場に ifCardOnField のカードがいれば boosted の値
+    // ・軽減後、このカードはトラッシュへ送られる（trashAfterUse）
+    damageReduction: { amount: 2, boosted: 4, ifCardOnField: 'mansion_isabella', trashAfterUse: true },
     effect:
       '装備対象：〈洋館〉人間。基本スタッツ補正なし。\n' +
       '【襲撃時】：装備人間が受ける襲撃ダメージを2軽減。\n' +
