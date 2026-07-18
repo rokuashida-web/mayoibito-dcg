@@ -45,7 +45,11 @@
 
       <!-- 上部バー（シード表示・ログボタン） -->
       <div id="top-bar">
-        <span id="seed-display"></span>
+        <span class="top-bar__texts">
+          <!-- 例：ターン5｜村 第3ターン｜メイン（仕様書 9.1） -->
+          <span id="turn-display"></span>
+          <span id="seed-display"></span>
+        </span>
         <button id="log-btn" type="button">ログ</button>
       </div>
 
@@ -109,6 +113,11 @@
           <span id="mulligan-hint">交換するカードを選んでください（0〜5枚）</span>
           <button id="mulligan-confirm" type="button">マリガンを確定</button>
         </div>
+        <!-- メイン中／ターン終了時の操作バー（仕様書 9.6・10.4） -->
+        <div id="action-bar" hidden>
+          <span id="action-hint"></span>
+          <button id="action-btn" type="button">メイン終了</button>
+        </div>
         <div id="hand-label">手札</div>
         <div id="hand"></div>
       </div>
@@ -118,6 +127,7 @@
       <div id="guide-overlay"></div>
       <div id="modal"></div>
       <div id="log-panel"></div>
+      <div id="zone-viewer"></div>
 
     </div>
   </div>
