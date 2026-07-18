@@ -1,5 +1,5 @@
 /* =====================================================================
-   ui.js  ―  画面の描画と入力（Stage 5）
+   ui.js  ―  画面の描画と入力（Stage 6-C）
    ---------------------------------------------------------------------
    役割:
      ・ゲーム状態（Game.state）を読んで盤面・手札を描画する
@@ -38,6 +38,8 @@ let trackSel = null;              // 追跡選択中の情報 { youkai, human }
 let attackHighlight = [];         // 襲撃演出で光らせるカードの uid
 let isBusy = false;               // 演出中：進行操作をロックする（仕様書 24）
 let matchInProgress = false;      // 対戦中かどうか（離脱確認に使う）
+let boardPick = null;             // 効果で盤面のカードを選ぶとき { candidates, cb }
+let pickerState = null;           // カード選択画面の状態
 
 /* =====================================================================
    表示用ステータス
@@ -111,6 +113,11 @@ function createCardElement(inst, variant) {
   if (trackSel) {
     if (isTrackCandidate(inst)) el.classList.add('is-candidate');
     if (trackSel.youkai === inst || trackSel.human === inst) el.classList.add('is-track-sel');
+  }
+
+  // 効果の対象を選んでいる最中：候補を強調する
+  if (boardPick && boardPick.candidates.indexOf(inst) !== -1) {
+    el.classList.add('is-target');
   }
 
   // 襲撃の演出中：対象を強調する（仕様書 24）
@@ -215,6 +222,7 @@ function cacheDom() {
   dom.quitBtn = document.getElementById('quit-btn');
   dom.result = document.getElementById('result');
   dom.banner = document.getElementById('banner');
+  dom.picker = document.getElementById('picker');
 
   // 盤面・重ね表示
   dom.board = document.getElementById('board');
@@ -512,6 +520,8 @@ const MOVE_CANCEL_PX = 10;
 function isInputBlocked(variant) {
   // リザルト表示中は盤面を操作しない
   if (dom.result.classList.contains('is-open')) return true;
+  // カード選択画面が開いている間は、その中のカードだけ操作できる
+  if (dom.picker.classList.contains('is-open')) return (variant !== 'zone');
   // 拡大詳細・確認ダイアログ・案内・ログ が開いている間は、どのカードも操作しない
   if (dom.expandedDetail.classList.contains('is-open')) return true;
   if (dom.modal.classList.contains('is-open')) return true;
@@ -551,13 +561,29 @@ function attachCardInput(el, inst, variant) {
     if (moved) return;
     // 短いタップの処理
     if (variant === 'zone') {
-      showViewerDetail(inst);                // 閲覧画面の中の詳細
+      // カード選択画面が開いていれば選択／解除、そうでなければ閲覧画面の詳細
+      if (pickerState) toggleCardPick(inst);
+      else showViewerDetail(inst);
       return;
     }
     if (UI_MODE === 'mulligan' && isHandCard) {
       toggleMulliganSelect(inst, el);        // マリガン中の手札は選択トグル
       return;
     }
+    // 効果の対象を選んでいる最中（強制なのでキャンセルはできない）
+    if (boardPick) {
+      if (boardPick.candidates.indexOf(inst) !== -1) {
+        const cb = boardPick.cb;
+        boardPick = null;
+        dom.targetBar.hidden = true;
+        renderScreen();
+        cb(inst);
+      } else {
+        showToast('効果の対象にできないカードです。');
+      }
+      return;
+    }
+
     // 演出中は選択・使用の操作を受け付けない（詳細の確認は可能・仕様書 24）
     if (isBusy) { openQuickDetail(inst, false); return; }
 
@@ -628,6 +654,11 @@ function showGuide(lines, onProceed) {
 
 /* =====================================================================
    確認ダイアログ／ログ
+   ---------------------------------------------------------------------
+   ボタンの並べ方の決まり（この作品で統一）:
+     左 … 戻る・やめる（元の状態に戻る側）
+     右 … 進む・確定する（先へ進む側）
+   buttons 配列に渡した順に左から並ぶので、進む側は必ず最後に入れる。
    ===================================================================== */
 function showModal(lines, buttons) {
   const ov = dom.modal;
@@ -725,8 +756,8 @@ function onMulliganConfirm() {
     showModal(
       ['交換するカードが選ばれていません。', '0枚のままマリガンを終了しますか？'],
       [
-        { label: '0枚で確定', onClick: function () { closeModal(); doMulliganConfirm([]); } },
         { label: '選択に戻る', onClick: function () { closeModal(); } },
+        { label: '0枚で確定', onClick: function () { closeModal(); doMulliganConfirm([]); } },
       ]
     );
   } else {
@@ -771,6 +802,20 @@ function showToast(message) {
    登場・使用（仕様書 11）
    ===================================================================== */
 
+/**
+ * カードを出したあとなど、盤面が変わったときの共通処理。
+ * 常在効果の再計算で決着することもあるため、ここで確認する。
+ * @returns {boolean} 決着していたら true
+ */
+function afterBoardChange() {
+  renderScreen();
+  if (Game.state.gameOver) {
+    finishWithResult();
+    return true;
+  }
+  return false;
+}
+
 /** 手札カード本体の「登場／使用」ボタンを押したとき */
 function onActionButton(inst) {
   const check = Game.canPlay(bottomSide, inst);
@@ -797,8 +842,14 @@ function onActionButton(inst) {
 
   if (!result.ok) {
     showToast(result.reasons.join(' '));
+    return;
   }
+  // 【登場時】効果があれば、ここで順番に解決する（仕様書 11.1 の 8）
   renderScreen();
+  runPendingEffects(function () {
+    isBusy = false;
+    afterBoardChange();
+  });
 }
 
 /** グッズの対象選択を始める（仕様書 11.2） */
@@ -809,6 +860,7 @@ function startTargetMode(goodsInst) {
 
   dom.actionBar.hidden = true;
   dom.targetBar.hidden = false;
+  dom.targetCancel.hidden = false;   // グッズはキャンセルできる
   dom.targetHint.textContent = goodsInst.master.name + ' を装備する対象を選んでください';
 
   renderScreen();                     // 対象候補を強調して描き直す
@@ -823,7 +875,7 @@ function confirmGoodsTarget(targetInst) {
   if (!result.ok) {
     showToast(result.reasons.join(' '));
   }
-  renderScreen();
+  afterBoardChange();
 }
 
 /** 対象選択をやめる（対象をタップする前ならキャンセルできる） */
@@ -901,18 +953,14 @@ function onTrackConfirm() {
   if (!trackSel.youkai || !trackSel.human) return;
   Game.setTracking(bottomSide, trackSel.youkai, trackSel.human);
   exitTrackingMode();
-  Game.toEndPhase();
-  renderScreen();
-  showActionBar();
+  goToEndPhase();
 }
 
 /** 追跡せずにターン終了へ */
 function onTrackSkip() {
   Game.skipTracking(bottomSide);
   exitTrackingMode();
-  Game.toEndPhase();
-  renderScreen();
-  showActionBar();
+  goToEndPhase();
 }
 
 /** メインに戻る（確定前のみ） */
@@ -981,6 +1029,224 @@ function playAttack(info, done) {
       }, STEP_MS);
     }, STEP_MS);
   }, STEP_MS);
+}
+
+/* =====================================================================
+   効果の解決（仕様書 18）
+   ---------------------------------------------------------------------
+   待機列にある効果を、1つずつ完全に解決してから次へ進みます。
+   選択が必要な場面では画面を出し、選び終わってから続きを処理します。
+   ===================================================================== */
+
+/** 効果が使う道具。game.js から呼ばれる。 */
+const uiOps = {
+
+  /** 発動する／しないの確認（仕様書 18.8） */
+  confirmYesNo: function (title, message, cb) {
+    showModal(
+      [title, message],
+      [
+        { label: '発動しない', onClick: function () { closeModal(); cb(false); } },
+        { label: '発動する', onClick: function () { closeModal(); cb(true); } },
+      ]
+    );
+  },
+
+  /** カードを選ぶ画面（手札・トラッシュ・山札の上など） */
+  pickCards: function (options, cb) {
+    openCardPicker(options, cb);
+  },
+
+  /** 盤面のカードを1体選ぶ */
+  pickBoardTarget: function (options, cb) {
+    // 候補が1体だけでも、どのカードが対象か分かるように選ばせる
+    boardPick = { candidates: options.candidates.slice(), cb: cb };
+    dom.targetBar.hidden = false;
+    dom.targetHint.textContent = options.title + '：' + options.message;
+    dom.targetCancel.hidden = true;   // 強制効果なのでキャンセル不可
+    renderScreen();
+  },
+};
+
+/**
+ * 待機列の効果をすべて解決する。
+ * @param {function} done すべて終わったときに呼ぶ処理
+ */
+function runPendingEffects(done) {
+  const st = Game.state;
+
+  if (st.gameOver) { done(); return; }
+
+  const item = Game.takeNextPending();
+  if (!item) { done(); return; }
+
+  isBusy = true;                     // 解決中は進行操作をロック（仕様書 24）
+  attackHighlight = [item.source.uid]; // 効果の発生源を強調
+  renderScreen();
+
+  Game.runEffect(item, uiOps, function () {
+    attackHighlight = [];
+    renderScreen();
+    // 次の効果へ（約0.5秒あけて見やすくする）
+    setTimeout(function () { runPendingEffects(done); }, STEP_MS);
+  });
+}
+
+/* =====================================================================
+   カード選択画面（仕様書 18.6）
+   ---------------------------------------------------------------------
+   mode: 'max'   … 最大N枚（0枚も選べる。0枚のときは確認する）
+         'exact' … ちょうどN枚（それ未満では確定できない）
+   ordered: true … 選んだ順に 1、2… の番号を表示する（仕様書 16.2）
+   ===================================================================== */
+function openCardPicker(options, cb) {
+  pickerState = {
+    options: options,
+    // selectable が指定されていなければ、表示したカードすべてを選べる
+    selectable: options.selectable ? options.selectable.slice() : options.cards.slice(),
+    selected: [],   // 選んだ順に入れる
+    cb: cb,
+  };
+  renderCardPicker();
+  dom.picker.classList.add('is-open');
+}
+
+function renderCardPicker() {
+  const st = pickerState;
+  const o = st.options;
+
+  dom.picker.innerHTML = '';
+
+  const box = document.createElement('div');
+  box.className = 'picker__box';
+
+  const title = document.createElement('div');
+  title.className = 'picker__title';
+  title.textContent = o.title;
+  box.appendChild(title);
+
+  const msg = document.createElement('div');
+  msg.className = 'picker__message';
+  msg.textContent = o.message;
+  msg.style.whiteSpace = 'pre-wrap';
+  box.appendChild(msg);
+
+  // カードを横に並べる（左が古い・右が新しい）
+  const row = document.createElement('div');
+  row.className = 'picker__row';
+  o.cards.forEach(function (inst) {
+    const card = createCardElement(inst, 'zone');
+
+    // 選べるカードは光らせ、選べないカードは暗く表示する（見えてはいる）
+    if (st.selectable.indexOf(inst) !== -1) card.classList.add('is-pickable');
+    else card.classList.add('is-unpickable');
+
+    const order = st.selected.indexOf(inst);
+    if (order !== -1) {
+      card.classList.add('is-selected');
+      // 選んだ順の番号を出す（ordered のときだけ）
+      if (o.ordered) {
+        const badge = document.createElement('div');
+        badge.className = 'picker__badge';
+        badge.textContent = String(order + 1);
+        card.appendChild(badge);
+      }
+    }
+    row.appendChild(card);
+  });
+  box.appendChild(row);
+
+  // 選択状況
+  const status = document.createElement('div');
+  status.className = 'picker__status';
+  if (st.selectable.length === 0) {
+    status.textContent = '選べるカードはありません';
+  } else {
+    const limit = (o.mode === 'exact') ? ('ちょうど' + o.count + '枚') : ('最大' + o.count + '枚');
+    status.textContent = '選択中：' + st.selected.length + '枚（' + limit + '）';
+  }
+  box.appendChild(status);
+
+  // 確定ボタン
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'picker__btn';
+  btn.textContent = (st.selectable.length === 0) ? '確認して進む' : '決定';
+  const canConfirm = (st.selectable.length === 0) ? true
+    : ((o.mode === 'exact')
+      ? (st.selected.length === o.count)
+      : (st.selected.length <= o.count));
+  btn.disabled = !canConfirm;
+  if (!canConfirm) btn.classList.add('is-disabled');
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    confirmCardPicker();
+  });
+  box.appendChild(btn);
+
+  dom.picker.appendChild(box);
+}
+
+/** 選択画面の中でカードを押したとき */
+function toggleCardPick(inst) {
+  const st = pickerState;
+  if (!st) return;
+
+  // 選べないカード（見えているだけのカード）は選択できない
+  if (st.selectable.indexOf(inst) === -1) {
+    showToast('このカードは選べません（長押しで詳細を確認できます）');
+    return;
+  }
+
+  const i = st.selected.indexOf(inst);
+  if (i !== -1) {
+    st.selected.splice(i, 1);     // すでに選んでいるカード → 解除（番号は詰め直される）
+  } else if (st.selected.length >= st.options.count) {
+    // これ以上は選べない状態で、別のカードをタップしたとき
+    if (st.options.count === 1) {
+      // 1枚しか選べない場面では、前の選択を解除して選び直す（そのほうが直感的）
+      st.selected = [inst];
+    } else {
+      // 複数枚を「選んだ順」に処理する場面（カエデなど）は、
+      // 勝手に入れ替えると順番が変わってしまうので、解除してもらう
+      showToast('すでに' + st.options.count + '枚選んでいます。選び直すときは、選択済みのカードをタップして解除してください。');
+      return;
+    }
+  } else {
+    st.selected.push(inst);
+  }
+  renderCardPicker();
+}
+
+function confirmCardPicker() {
+  const st = pickerState;
+  const o = st.options;
+
+  // 選べる候補がそもそも無い場合は、確認せずそのまま進む
+  if (st.selectable.length === 0) { finishCardPicker(); return; }
+
+  // 0枚で決定するときは確認する（仕様書 18.6）
+  if (o.mode === 'max' && st.selected.length === 0) {
+    showModal(
+      ['カードを選んでいません。', '0枚を選択して進めますか？'],
+      [
+        { label: '選択に戻る', onClick: function () { closeModal(); } },
+        { label: '0枚で進める', onClick: function () { closeModal(); finishCardPicker(); } },
+      ]
+    );
+    return;
+  }
+  finishCardPicker();
+}
+
+function finishCardPicker() {
+  const st = pickerState;
+  const chosen = st.selected.slice();
+  const cb = st.cb;
+  pickerState = null;
+  dom.picker.classList.remove('is-open');
+  dom.picker.innerHTML = '';
+  cb(chosen);
 }
 
 /* =====================================================================
@@ -1110,9 +1376,14 @@ function resetUiState() {
   selectedHandUid = null;
   targetMode = null;
   trackSel = null;
+  boardPick = null;
+  pickerState = null;
   attackHighlight = [];
   isBusy = false;
   mulliganSelected.clear();
+  dom.picker.classList.remove('is-open');
+  dom.picker.innerHTML = '';
+  dom.targetCancel.hidden = false;
   closeQuickDetail();
   closeExpandedDetail();
   closeZoneViewer();
@@ -1132,8 +1403,8 @@ function onQuit() {
   showModal(
     ['対戦を中断して開始画面へ戻りますか？', '現在の対戦内容は失われます。'],
     [
-      { label: '中断する', onClick: function () { closeModal(); backToStart(); } },
       { label: 'やめる', onClick: function () { closeModal(); } },
+      { label: '中断する', onClick: function () { closeModal(); backToStart(); } },
     ]
   );
 }
@@ -1193,15 +1464,37 @@ function beginTurnFlow(side) {
 function afterAttack(side) {
   if (Game.state.gameOver) { finishWithResult(); return; }
 
-  // 2. 開始時効果 … Stage6 で実装
-  // 3. 気力回復 → 4. 1枚ドロー（仕様書 9.3）
-  Game.turnStartResources(side);
+  // 2. 開始時効果
+  //    襲撃で倒れたカードの【場を離れた時】効果などを、ここで順番に解決する
+  runPendingEffects(function () {
+    isBusy = false;
+    if (Game.state.gameOver) { finishWithResult(); return; }
+
+    // 3. 気力回復 → 4. 1枚ドロー（仕様書 9.3）
+    Game.turnStartResources(side);
+    renderScreen();
+    if (Game.state.gameOver) { finishWithResult(); return; }
+
+    // 5. メインへ
+    showActionBar();
+  });
+}
+
+/**
+ * 追跡が終わったあと、ターン終了待ちへ進む（仕様書 10.4 の 4〜5）
+ * ここでフィールドの【ターン終了時】効果を解決する。
+ */
+function goToEndPhase() {
+  Game.queueEndTurnEffects(bottomSide);
   renderScreen();
 
-  if (Game.state.gameOver) { finishWithResult(); return; }
-
-  // 5. メインへ
-  showActionBar();
+  runPendingEffects(function () {
+    isBusy = false;
+    if (Game.state.gameOver) { finishWithResult(); return; }
+    Game.toEndPhase();
+    renderScreen();
+    showActionBar();   // 「ターン終了」ボタンを出す
+  });
 }
 
 /** 決着したとき：約1秒だけ盤面を見せてからリザルトを出す */
@@ -1244,7 +1537,7 @@ function onActionBtn() {
     if (nextPhase === 'tracking') {
       enterTrackingMode();
     } else {
-      showActionBar();   // 表示を「ターン終了」に変える
+      goToEndPhase();    // 追跡がない場合も、終了時効果を処理してから終了待ちへ
     }
     return;
   }

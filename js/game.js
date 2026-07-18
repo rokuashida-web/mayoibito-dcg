@@ -1,5 +1,5 @@
 /* =====================================================================
-   game.js  ―  ゲームのルール処理（Stage 5）
+   game.js  ―  ゲームのルール処理（Stage 6-C）
    ---------------------------------------------------------------------
    このファイルは「ルール処理だけ」を担当します。画面表示は書きません。
    （画面表示は ui.js が担当します。処理と表示を分けるためです。）
@@ -30,8 +30,16 @@
      ・場を離れる処理（装備グッズもトラッシュへ／状態リセット）
      ・勝敗判定（ロスト上限／人間0体／山札0枚、同時なら引き分け）
 
-   Stage 6 で実装（今回はやらない）:
-     ・【登場時】【常在】【場を離れた時】などのカード効果
+   Stage 6-A で追加（仕様書 17）:
+     ・常在効果の反映（effects.js が計算し、ここで能力値に足す）
+     ・常在効果の即時再計算と、体力0以下になったカードの同時致死処理
+
+   Stage 6-B で追加（仕様書 18）:
+     ・効果の待機列（誘発した効果を順番に解決する仕組み）
+     ・効果が使う共通操作（山札を削る／効果ダメージ／回収／山札上を見る など）
+
+   Stage 6-C で追加:
+     ・【場を離れた時】・イベント・フィールドの効果を待機列へ流す仕組み
    ===================================================================== */
 
 'use strict';
@@ -171,6 +179,12 @@ const Game = {
 
       // 決着したらここに結果が入る。入ったら以降の処理は止める（仕様書 19）
       gameOver: null,
+
+      // 誘発した効果を並べておく待機列（仕様書 18.1）
+      pendingEffects: [],
+
+      // 「1ターンに1回」「ゲーム中1回」の使用済み記録
+      effectUsed: {},
     };
     return this.state;
   },
@@ -367,6 +381,15 @@ const Game = {
     let hpBonus = 0;
     const corrections = []; // 「補正内訳」の表示用
 
+    // --- 常在効果による補正（仕様書 17）---
+    // 計算そのものは effects.js が行い、ここでは結果を足すだけ。
+    if (typeof Effects !== 'undefined') {
+      const stat = Effects.getStaticModifiers(inst, this.state);
+      speedBonus += stat.speed;
+      hpBonus += stat.hp;
+      stat.notes.forEach(function (n) { corrections.push(n); });
+    }
+
     // --- 装備しているグッズによる補正 ---
     const goods = inst.equippedGoods;
     if (goods && goods.master.equipBonus) {
@@ -513,6 +536,12 @@ const Game = {
 
     st.log.push('登場：' + p.label + ' ' + inst.master.name +
       '（気力' + cost + '消費 → 残り' + p.energy + '）');
+
+    // 常在効果を即時再計算し、体力0以下になったカードを処理する（仕様書 11.1 の 5〜7）
+    this.recalcAndResolveDeaths('登場時');
+
+    // 8. 勝敗がなければ【登場時】効果を待機列へ追加する
+    this.queueEnterEffect(inst);
     return { ok: true };
   },
 
@@ -545,6 +574,9 @@ const Game = {
     st.log.push('使用：' + p.label + ' ' + goodsInst.master.name +
       ' → ' + targetInst.master.name + ' に装備' +
       '（気力' + cost + '消費 → 残り' + p.energy + '）');
+
+    // 能力値の再計算（仕様書 11.2 の 7〜8）
+    this.recalcAndResolveDeaths('装備時');
     return { ok: true };
   },
 
@@ -564,10 +596,19 @@ const Game = {
 
     const cost = this._payCost(side, inst);
     this._removeFromHand(side, inst);
-    p.trash.push(inst); // 使用後はトラッシュへ
+    // ※トラッシュへ送るのは効果の解決後（仕様書 11.3）。
+    //   手札から離れているので、境界線などで自分自身が捨てる候補にならない。
 
     st.log.push('使用：' + p.label + ' ' + inst.master.name +
-      '（気力' + cost + '消費 → 残り' + p.energy + '）効果はStage6で実装');
+      '（気力' + cost + '消費 → 残り' + p.energy + '）');
+
+    // 効果を待機列へ。効果を持たないカードでも必ずトラッシュへ送る。
+    if (Effects.hasEffect('event', inst.cardId)) {
+      this.queueEffect('event', inst);
+    } else {
+      p.trash.push(inst);
+      this.recalcAndResolveDeaths('イベント使用時');
+    }
     return { ok: true };
   },
 
@@ -664,9 +705,12 @@ const Game = {
     inst.equippedGoods = null;
 
     // 人間はロスト、怪異はトラッシュ
+    let lostThird = false;
     if (inst.master.type === 'human') {
       p.lost.push(inst);
       st.log.push('移動：' + p.label + ' ' + inst.master.name + ' → ロスト（' + p.lost.length + '枚）');
+      // ちょうど3枚目が置かれた瞬間だけ、フィールド効果が誘発する
+      if (p.lost.length === 3) lostThird = true;
     } else {
       p.trash.push(inst);
       st.log.push('移動：' + p.label + ' ' + inst.master.name + ' → トラッシュ');
@@ -681,6 +725,12 @@ const Game = {
 
     // 追跡ペアに含まれていたら解除する（仕様書 10.3）
     this._clearTrackingWith(inst);
+
+    // 【場を離れた時】効果を待機列へ（仕様書 17 の 8）
+    this.queueEffect('leave', inst);
+
+    // ロストへちょうど3枚目が置かれたときのフィールド効果
+    if (lostThird) this.queueEffect('lostThird', p.field);
   },
 
   /** そのカードが関わっている追跡を解除する */
@@ -697,6 +747,333 @@ const Game = {
         st.log.push('追跡解除：' + DECKS[side].label + '（対象が場を離れたため）');
       }
     });
+  },
+
+  /* =============================================================
+     効果の待機列（仕様書 18.1・18.2）
+     -------------------------------------------------------------
+     効果が誘発したら、すぐに実行せずいったん待機列へ入れます。
+     そして1つずつ、完全に解決してから次へ進みます。
+     ============================================================= */
+
+  /**
+   * 効果を待機列へ入れる（仕様書 18.1）
+   * @param kind 'enter'（登場時）/'leave'（場を離れた時）/'event'（イベント）
+   *             /'endTurn'（フィールドのターン終了時）/'lostThird'（ロスト3枚目）
+   */
+  queueEffect: function (kind, inst) {
+    const st = this.state;
+    if (st.gameOver) return;                        // 敗北成立後は誘発しない
+    if (!Effects.hasEffect(kind, inst.cardId)) return; // 効果を持たないカードは何もしない
+
+    st.pendingEffects.push({
+      kind: kind,
+      source: inst,
+      side: inst.owner,
+      // 並び替え用に、誘発した時点の場所を控えておく（仕様書 18.2）
+      order: this._positionOrder(inst),
+    });
+  },
+
+  /** 【登場時】効果を待機列へ入れる（仕様書 11.1 の 8） */
+  queueEnterEffect: function (inst) {
+    this.queueEffect('enter', inst);
+  },
+
+  /** 自分のターン終了時にはたらくフィールド効果を待機列へ（仕様書 10.4 の 4） */
+  queueEndTurnEffects: function (side) {
+    const p = this.state.players[side];
+    this.queueEffect('endTurn', p.field);
+  },
+
+  /**
+   * 同時タイミングの並び順を数値にする（小さいほど先に解決）。
+   * 同じプレイヤー内の順番（仕様書 18.2）:
+   *   1 フィールド → 2 通常人間 左→右 → 3 通常怪異 左→右
+   *   → 4 追跡中人間 → 5 追跡中怪異
+   */
+  _positionOrder: function (inst) {
+    const p = this.state.players[inst.owner];
+    const type = inst.master.type;
+
+    if (type === 'field') return 100;
+    // イベントやグッズは場に並ばないので、いちばん後ろの扱いにする
+    if (type !== 'human' && type !== 'youkai') return 600;
+
+    const zone = (type === 'human') ? p.humans : p.youkai;
+    const index = Math.max(0, zone.indexOf(inst));
+
+    if (type === 'human') return (inst.tracking ? 400 : 200) + index;
+    return (inst.tracking ? 500 : 300) + index;
+  },
+
+  /**
+   * 待機列から次に解決する効果を1つ取り出す。
+   * ターンプレイヤーの効果を先に解決します（仕様書 18.2・18.3）。
+   * 同じプレイヤー内は、入った順（FIFO）と場所の順で決めます。
+   */
+  takeNextPending: function () {
+    const st = this.state;
+    if (st.gameOver) { st.pendingEffects = []; return null; } // 敗北後はすべて中止
+    if (st.pendingEffects.length === 0) return null;
+
+    let bestIndex = 0;
+    for (let i = 1; i < st.pendingEffects.length; i++) {
+      const a = st.pendingEffects[i];
+      const b = st.pendingEffects[bestIndex];
+
+      // ターンプレイヤーの効果を優先
+      const aTurn = (a.side === st.currentSide) ? 0 : 1;
+      const bTurn = (b.side === st.currentSide) ? 0 : 1;
+      if (aTurn !== bTurn) { if (aTurn < bTurn) bestIndex = i; continue; }
+
+      // 同じプレイヤーなら場所の順
+      if (a.order < b.order) bestIndex = i;
+    }
+    return st.pendingEffects.splice(bestIndex, 1)[0];
+  },
+
+  /**
+   * 待機列から取り出した効果を1つ解決する。
+   * 選択などの操作は画面側（ui.js）から渡された道具（uiOps）を使います。
+   * @param item   takeNextPending() で取り出したもの
+   * @param uiOps  { confirmYesNo, pickCards, pickBoardTarget }
+   * @param done   解決が終わったときに呼ばれる関数
+   */
+  runEffect: function (item, uiOps, done) {
+    const st = this.state;
+    const self = this;
+    if (st.gameOver) { done(); return; }
+
+    const KIND_LABEL = {
+      enter: '【登場時】',
+      leave: '【場を離れた時】',
+      event: '（イベント使用）',
+      endTurn: '【ターン終了時】',
+      lostThird: '【ロスト3枚目】',
+    };
+    st.log.push('効果：' + DECKS[item.side].label + ' ' +
+      item.source.master.name + (KIND_LABEL[item.kind] || ''));
+
+    // 効果の中で使える道具をまとめる
+    const ctx = {
+      state: st,
+      side: item.side,
+      source: item.source,
+      me: st.players[item.side],
+      opponent: st.players[otherSide(item.side)],
+      game: this,
+      log: function (msg) { st.log.push(msg); },
+      isOver: function () { return !!st.gameOver; },
+      confirmYesNo: uiOps.confirmYesNo,
+      pickCards: uiOps.pickCards,
+      pickBoardTarget: uiOps.pickBoardTarget,
+    };
+
+    Effects.runEffect(item.kind, item.source.cardId, ctx, function () {
+      // イベントは効果の解決が終わったらトラッシュへ送る（仕様書 11.3）
+      if (item.kind === 'event') {
+        st.players[item.side].trash.push(item.source);
+        st.log.push('トラッシュへ：' + DECKS[item.side].label + ' ' +
+          item.source.master.name + '（使用後）');
+      }
+      // 効果ダメージなどで倒れたカードをここで処理する（仕様書 17）
+      self.recalcAndResolveDeaths('効果解決中');
+      done();
+    });
+  },
+
+  /* =============================================================
+     効果が使う共通操作
+     ============================================================= */
+
+  /** 「1ターンに1回」などの使用済み判定 */
+  isEffectUsed: function (key) { return this.state.effectUsed[key] === true; },
+  markEffectUsed: function (key) { this.state.effectUsed[key] = true; },
+
+  /** 1ターンに1回の記録キー（プレイヤーごと・ターンごと・カード名ごと） */
+  turnUseKey: function (side, cardId) {
+    return 'turn:' + side + ':' + cardId + ':' + this.state.turnCount;
+  },
+  /** ゲーム中1回の記録キー（プレイヤーごと・カード名ごと） */
+  gameUseKey: function (side, cardId) {
+    return 'game:' + side + ':' + cardId;
+  },
+
+  /**
+   * 山札の上から n 枚をトラッシュへ置く（仕様書 6・19）
+   * 山札が足りなければある分だけ。0枚になった時点で敗北し、以降を中止します。
+   */
+  trashTopOfDeck: function (side, n) {
+    const st = this.state;
+    const p = st.players[side];
+    const moved = [];
+
+    for (let i = 0; i < n; i++) {
+      if (p.deck.length === 0) break;
+      const card = p.deck.shift();
+      p.trash.push(card);
+      moved.push(card);
+      st.log.push('トラッシュへ：' + p.label + ' ' + card.master.name + '（山札から）');
+
+      if (p.deck.length === 0) {
+        st.log.push('山札が0枚になりました：' + p.label);
+        this.checkVictory('効果解決中');
+        break; // 敗北したので以降の処理を中止する
+      }
+    }
+    return moved;
+  },
+
+  /**
+   * 効果ダメージを与える（仕様書 14：襲撃ダメージとは内部で区別する）
+   */
+  dealEffectDamage: function (target, amount, sourceName) {
+    const st = this.state;
+    target.accumulatedDamage += amount;
+    st.log.push('効果ダメージ：' + (sourceName ? sourceName + ' → ' : '') +
+      target.master.name + ' に ' + amount);
+    // 倒れたかどうかは、このあと recalcAndResolveDeaths で判定する
+  },
+
+  /** トラッシュからカードを手札へ戻す */
+  moveTrashToHand: function (side, inst) {
+    const st = this.state;
+    const p = st.players[side];
+    const i = p.trash.indexOf(inst);
+    if (i === -1) return false;
+    p.trash.splice(i, 1);
+    p.hand.push(inst);
+    st.log.push('回収：' + p.label + ' ' + inst.master.name + '（トラッシュ → 手札）');
+    return true;
+  },
+
+  /** 手札からトラッシュへ置く（選択順に処理する） */
+  discardFromHand: function (side, insts) {
+    const st = this.state;
+    const p = st.players[side];
+    insts.forEach(function (inst) {
+      const i = p.hand.indexOf(inst);
+      if (i === -1) return;
+      p.hand.splice(i, 1);
+      p.trash.push(inst);
+      st.log.push('トラッシュへ：' + p.label + ' ' + inst.master.name + '（手札から）');
+    });
+  },
+
+  /**
+   * 山札の上から n 枚を「見る」（仕様書 18.7）
+   * 見るだけなので移動せず、山札0枚の判定も行いません。
+   */
+  lookTopOfDeck: function (side, n) {
+    const p = this.state.players[side];
+    return p.deck.slice(0, Math.min(n, p.deck.length));
+  },
+
+  /**
+   * 見たカードのうち1枚を手札へ、残りを無作為順で山札の下へ戻す（仕様書 18.7）
+   * @param taken 手札へ加えるカード（なければ null）
+   * @param looked 見たカード全部
+   */
+  resolveLook: function (side, looked, taken) {
+    const st = this.state;
+    const p = st.players[side];
+
+    // 見た枚数ぶんを山札の上から取り除く
+    p.deck.splice(0, looked.length);
+
+    if (taken) {
+      p.hand.push(taken);
+      st.log.push('回収：' + p.label + ' ' + taken.master.name + '（山札から手札へ）');
+    }
+
+    // 残りをシード付き乱数で無作為に並べ替えて山札の下へ
+    const rest = looked.filter(function (c) { return c !== taken; });
+    st.rng.shuffle(rest);
+    rest.forEach(function (c) { p.deck.push(c); });
+    st.log.push('山札下へ戻す：' + p.label + ' ' + rest.length + '枚（順番は非公開）');
+  },
+
+  /**
+   * ロストからカードを場へ登場させる（イザベラ用・仕様書 27）
+   * ・コスト不要、新しい登場として人間エリアの右端へ
+   * ・ダメージや状態はリセット
+   * ・人間エリアが満員なら不発（既存カードは押し出さない）
+   */
+  summonFromLost: function (side, cardId) {
+    const st = this.state;
+    const p = st.players[side];
+
+    const i = p.lost.findIndex(function (c) { return c.cardId === cardId; });
+    if (i === -1) {
+      st.log.push('不発：ロストに対象のカードがありません');
+      return null;
+    }
+    if (p.humans.length >= MAX_HUMANS) {
+      st.log.push('不発：人間エリアが上限のため登場できません');
+      return null;
+    }
+
+    const card = p.lost.splice(i, 1)[0];
+    card.accumulatedDamage = 0;   // 新しい登場として扱う
+    card.tracking = false;
+    card.equippedGoods = null;
+    p.humans.push(card);          // 右端へ
+    st.log.push('登場：' + p.label + ' ' + card.master.name + '（ロストから／コスト不要）');
+    return card;
+  },
+
+  /* =============================================================
+     盤面の再計算と、同時致死処理（仕様書 17）
+     -------------------------------------------------------------
+     常在効果の条件が変わると、能力値が変わります。
+     その結果、現在体力が0以下になったカードは「同時に」場を離れます。
+     さらにその離脱で条件が変わり、新たに倒れるカードが出ることもあるため、
+     変化が起きなくなるまで繰り返します。
+
+     手順（仕様書 17）:
+       1. 盤面再計算
+       2. 致死カードをすべて同時移動
+       3. グッズを同時移動（_leaveField の中で行う）
+       4. 勝敗判定
+       5. 勝敗がなければ再計算
+       6. 新たな致死カードを次の一団として処理
+       7. 安定するまで繰り返す
+     ============================================================= */
+  recalcAndResolveDeaths: function (phaseLabel) {
+    const st = this.state;
+    const self = this;
+    const dead = [];      // このあいだに倒れたカード（画面表示用）
+
+    let guard = 0;        // 万一の無限ループ防止
+    while (guard++ < 30) {
+      if (!st || st.gameOver) break;
+
+      // 1. 盤面を見直し、現在体力が0以下のカードを集める
+      const dying = [];
+      ['village', 'mansion'].forEach(function (side) {
+        const p = st.players[side];
+        p.humans.concat(p.youkai).forEach(function (c) {
+          const stats = self.getStats(c);
+          if (stats.hasStats && stats.curHp <= 0) dying.push(c);
+        });
+      });
+
+      // 倒れるカードがなければ、盤面は安定している
+      if (dying.length === 0) break;
+
+      // 2〜3. まとめて同時に場を離れる（装備グッズも一緒に移動する）
+      dying.forEach(function (c) {
+        st.log.push('致死：' + c.master.name + '（現在体力0以下）');
+        self._leaveField(c);
+        dead.push(c);
+      });
+
+      // 4. 勝敗判定
+      self.checkVictory(phaseLabel);
+    }
+
+    return dead;
   },
 
   /* =============================================================
@@ -848,7 +1225,11 @@ const Game = {
     // 勝敗判定
     this.checkVictory('襲撃中');
 
-    return dying;
+    // ロスト・トラッシュが増えたことで常在効果の条件が変わり、
+    // さらに倒れるカードが出ることがある（仕様書 17）
+    const extra = this.recalcAndResolveDeaths('襲撃中');
+
+    return dying.concat(extra);
   },
 
   /** ヘッダー用の文字列（例：ターン5｜村 第3ターン｜メイン）※仕様書 9.1 */

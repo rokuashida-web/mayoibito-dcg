@@ -1093,3 +1093,122 @@ html, body {
   cursor: pointer;
 }
 .result__btn:active { background: #322f4a; }
+
+
+/* =====================================================================
+   ▼▼▼ Stage 6-B 追加分（カード選択画面） ▼▼▼
+   ===================================================================== */
+#picker {
+  position: absolute;
+  inset: 0;
+  /* 確認ダイアログ(90)より下、リザルト(72)より上 */
+  z-index: 78;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.85);
+}
+#picker.is-open { display: flex; }
+
+.picker__box {
+  width: 100%;
+  max-width: 360px;
+  max-height: 88%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+.picker__title {
+  font-size: 15px;
+  font-weight: bold;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.picker__message {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+/* カードを横に並べる。多いときは横スクロール */
+.picker__row {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-bottom: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: center;
+  min-height: 78px;
+}
+.picker__status {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.picker__btn {
+  margin-top: 10px;
+  padding: 11px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text);
+  background: #26243a;
+  border: 1px solid var(--text-dim);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.picker__btn:active { background: #322f4a; }
+.picker__btn.is-disabled,
+.picker__btn:disabled {
+  color: var(--text-dim);
+  background: #1b1a28;
+  border-color: var(--line);
+  cursor: default;
+}
+/* 選んだ順番の番号（1、2…） */
+.picker__badge {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffd36b;
+  color: #201f30;
+  font-size: 11px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 選択画面の中で選ばれているカード */
+#picker .card.is-selected {
+  outline: 3px solid #ffd36b;
+  outline-offset: -1px;
+  box-shadow: 0 0 12px rgba(255, 211, 107, 0.5);
+}
+
+
+/* ---------------- 選択画面：選べるカードと選べないカード ---------------- */
+/* 回収できるカードだけを光らせる（山札上を見る効果など） */
+#picker .card.is-pickable {
+  outline: 2px solid #7ad1ff;
+  outline-offset: -1px;
+  box-shadow: 0 0 12px rgba(122, 209, 255, 0.55);
+}
+/* 見えてはいるが選べないカードは暗くする */
+#picker .card.is-unpickable {
+  opacity: 0.42;
+  filter: saturate(0.5);
+}
+/* 選択済みは黄色を優先して表示する */
+#picker .card.is-selected {
+  outline: 3px solid #ffd36b;
+  box-shadow: 0 0 12px rgba(255, 211, 107, 0.6);
+  opacity: 1;
+  filter: none;
+}

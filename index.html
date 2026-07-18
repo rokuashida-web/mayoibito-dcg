@@ -152,6 +152,9 @@
       <!-- 襲撃などの見出しを一時的に出す表示（仕様書 24） -->
       <div id="banner"></div>
 
+      <!-- カード選択画面（仕様書 18.6・18.7） -->
+      <div id="picker"></div>
+
       <!-- リザルト画面（仕様書 22） -->
       <div id="result"></div>
 
@@ -166,13 +169,14 @@
       1. cards.js   … カードマスターデータ
       2. decks.js   … 固定デッキ構成
       3. random.js  … シード付き乱数
-      4. game.js    … ゲームのルール処理（状態・初期準備・マリガン）
-      5. ui.js      … 画面描画・入力・進行
-    ※ effects.js は Stage 4 以降で追加します。
+      4. effects.js … カードごとの効果（常在効果など）
+      5. game.js    … ゲームのルール処理（状態・ターン・登場・襲撃・勝敗）
+      6. ui.js      … 画面描画・入力・進行
   -->
   <script src="js/cards.js"></script>
   <script src="js/decks.js"></script>
   <script src="js/random.js"></script>
+  <script src="js/effects.js"></script>
   <script src="js/game.js"></script>
   <script src="js/ui.js"></script>
 </body>

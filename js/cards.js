@@ -461,7 +461,9 @@ const CARD_MASTER = {
     faction: 'mansion',
     type: 'goods',
     cost: 1,
-    traits: [],
+    // 〈洋館〉…洋館陣営のグッズであることを示す。
+    // シルヴィの「〈洋館〉グッズ／イベントを回収」の対象になる。
+    traits: ['洋館'],
     equipTo: '〈洋館〉人間',
     equipTarget: { type: 'human', trait: '洋館' },
     // 基本スタッツ補正なし
@@ -486,7 +488,7 @@ const CARD_MASTER = {
     faction: 'mansion',
     type: 'goods',
     cost: 1,
-    traits: [],
+    traits: ['洋館'],
     equipTo: '〈洋館〉怪異',
     equipTarget: { type: 'youkai', trait: '洋館' },
     // 基本スピード+1。自分のロストが3枚以上ならさらに+1（合計+2）
