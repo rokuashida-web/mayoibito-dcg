@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>マヨイビト（最小試作版）</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- 横向き警告（スマホで横向きのときだけ表示） -->
+    <div id="orientation-warning">
+      <p>端末を縦向きにしてください</p>
+    </div>
+
+    <!-- ============ 開始画面（先攻選択・シード入力） ============ -->
+    <div id="start-screen">
+      <div class="start__box">
+        <div class="start__title">マヨイビト</div>
+        <div class="start__subtitle">最小試作版</div>
+
+        <div class="start__section">
+          <div class="start__label">先攻を選ぶ</div>
+          <div class="start__choices">
+            <button type="button" class="choice" data-side="village">ヨマモリ村</button>
+            <button type="button" class="choice" data-side="mansion">黒薔薇の館</button>
+          </div>
+        </div>
+
+        <div class="start__section">
+          <div class="start__label">シード（空欄なら自動で決まります）</div>
+          <input id="seed-input" type="text" inputmode="text"
+                 placeholder="例：MAYO-1A2B-3C4D" autocomplete="off">
+          <div class="start__hint">同じシード＋同じ操作なら、毎回同じ試合になります。</div>
+        </div>
+
+        <button id="start-btn" type="button">対戦開始</button>
+      </div>
+    </div>
+
+    <!-- ============ ゲーム枠（開始まで hidden） ============ -->
+    <div id="game-frame" hidden>
+
+      <!-- 上部バー（シード表示・ログボタン） -->
+      <div id="top-bar">
+        <span id="seed-display"></span>
+        <button id="log-btn" type="button">ログ</button>
+      </div>
+
+      <!-- ============ 盤面 ============ -->
+      <div id="board">
+
+        <!-- 上側：待機中（洋館） -->
+        <div class="side side--opponent">
+          <div class="side__bar">
+            <span class="side__header" id="opp-header">黒薔薇の館｜待機中</span>
+            <span class="side__status" id="opp-status"></span>
+          </div>
+
+          <!-- 後列（追跡なし 怪異最大3／人間最大3）※洋館は後列が上 -->
+          <div class="lane lane--back">
+            <div class="back-group back-group--youkai" id="opp-back-youkai"></div>
+            <div class="back-group back-group--human" id="opp-back-human"></div>
+          </div>
+
+          <!-- 前列（左：追跡怪異／中央：フィールド固定／右：追跡人間）※中央側を向く -->
+          <div class="lane lane--front">
+            <div class="front-slot front-slot--youkai" id="opp-track-youkai"></div>
+            <div class="front-slot front-slot--field" id="opp-field"></div>
+            <div class="front-slot front-slot--human" id="opp-track-human"></div>
+          </div>
+        </div>
+
+        <!-- 中央：追跡・襲撃の戦場スペース（Stage1〜2は区切り線のみ） -->
+        <div class="center-track"></div>
+
+        <!-- 下側：操作中（村） -->
+        <div class="side side--self">
+          <!-- 前列（村は前列が上＝中央側） -->
+          <div class="lane lane--front">
+            <div class="front-slot front-slot--youkai" id="self-track-youkai"></div>
+            <div class="front-slot front-slot--field" id="self-field"></div>
+            <div class="front-slot front-slot--human" id="self-track-human"></div>
+          </div>
+
+          <!-- 後列（村は後列が下） -->
+          <div class="lane lane--back">
+            <div class="back-group back-group--youkai" id="self-back-youkai"></div>
+            <div class="back-group back-group--human" id="self-back-human"></div>
+          </div>
+        </div>
+
+        <!-- クイック詳細（左上・重ね表示） -->
+        <div id="quick-detail"></div>
+      </div>
+
+      <!-- 操作中ヘッダー＋ステータス（独立領域・手札とは重ねない） -->
+      <div id="self-header" class="op-header">
+        <span class="op-header__label" id="self-header-label"></span>
+        <span class="op-header__status" id="self-status"></span>
+      </div>
+
+      <!-- 手札（下端・横スクロールのみ） -->
+      <div id="hand-wrap">
+        <!-- マリガン中だけ表示される確定バー -->
+        <div id="mulligan-bar" hidden>
+          <span id="mulligan-hint">交換するカードを選んでください（0〜5枚）</span>
+          <button id="mulligan-confirm" type="button">マリガンを確定</button>
+        </div>
+        <div id="hand-label">手札</div>
+        <div id="hand"></div>
+      </div>
+
+      <!-- 重ね表示：拡大詳細・案内・確認ダイアログ・ログ（スマホ枠全体を覆う） -->
+      <div id="expanded-detail"></div>
+      <div id="guide-overlay"></div>
+      <div id="modal"></div>
+      <div id="log-panel"></div>
+
+    </div>
+  </div>
+
+  <!--
+    スクリプトの読み込み順:
+      1. cards.js   … カードマスターデータ
+      2. decks.js   … 固定デッキ構成
+      3. random.js  … シード付き乱数
+      4. game.js    … ゲームのルール処理（状態・初期準備・マリガン）
+      5. ui.js      … 画面描画・入力・進行
+    ※ effects.js は Stage 4 以降で追加します。
+  -->
+  <script src="js/cards.js"></script>
+  <script src="js/decks.js"></script>
+  <script src="js/random.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>

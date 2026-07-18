@@ -1,0 +1,745 @@
+/* =====================================================================
+   style.css  ―  画面の見た目（Stage 1／前列・後列レイアウト版）
+   ---------------------------------------------------------------------
+   ・簡易ホラー調：黒 / 濃紺 / くすんだ紫（仕様書 25）
+   ・村＝深い緑・青緑 / 洋館＝暗い紫・ワインレッド
+   ・名前・数値・ボタンの可読性を最優先
+   ・スマホは縦向き前提。PC では縦長のスマホ画面を中央に表示
+
+   【このレイアウト版の構成】
+   各陣営は「前列」「後列」の2レーンだけ。
+     前列：左＝追跡怪異 / 中央＝フィールド（固定）/ 右＝追跡人間
+     後列：追跡していない 怪異最大3＋人間最大3 を横一列（最大6枚）
+   前列が盤面中央（戦場）を向く：
+     上（洋館）… 後列→前列（前列が下＝中央側）
+     下（村）  … 前列→後列（前列が上＝中央側）
+   ヘッダー付近に 山札／気力／ロスト／トラッシュ の表示枠（Stage1は「--」）
+   ===================================================================== */
+
+:root {
+  --bg: #0a0a12;
+  --frame-bg: #10101c;
+  --panel-bg: #171626;
+  --line: #2a2940;
+  --text: #e8e6f0;
+  --text-dim: #9a97b5;
+
+  --village-main: #1f5c4d;
+  --village-line: #3fae8f;
+  --village-soft: #12362e;
+
+  --mansion-main: #4a1f3d;
+  --mansion-line: #9b3b63;
+  --mansion-soft: #2e1226;
+
+  --danger: #b0455a;
+
+  /* カードサイズ（1か所で調整できるよう変数化） */
+  --front-card-w: 76px;   /* 前列カード（追跡中・フィールド） */
+  --front-card-h: 92px;
+  --back-card-max: 56px;  /* 後列カードの最大幅（狭い画面では自動で縮む） */
+  --back-card-h: 66px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =====================================================================
+   スマホ枠
+   ===================================================================== */
+#game-frame {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  height: 100%;
+  max-height: 920px;
+  background: var(--frame-bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column; /* 盤面 → 操作中ヘッダー → 手札 */
+}
+#game-frame.is-hidden { display: none; }
+
+/* =====================================================================
+   盤面
+   ===================================================================== */
+#board {
+  position: relative;   /* クイック詳細を左上に重ねる基準 */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 6px;
+  gap: 6px;
+  /* 横スクロールバーは出さない。背の低い画面のときだけ縦にスクロール可 */
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* 陣営ブロックは中身の高さのまま（伸び縮みさせない）。
+     余った縦の空きは、下の .center-track（中央の戦場）が引き受ける。 */
+  flex: 0 0 auto;
+}
+
+/* ---- ヘッダー＋ステータスの帯 ---- */
+.side__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.side__header {
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.side--opponent .side__header {
+  background: var(--mansion-soft);
+  border: 1px solid var(--mansion-line);
+  color: #e7c6d8;
+}
+
+/* ステータス枠（山札・気力・ロスト・トラッシュ） */
+.side__status,
+.op-header__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.stat {
+  display: inline-flex;
+  gap: 3px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+.stat__k { color: var(--text-dim); }
+.stat__v { color: var(--text); font-weight: bold; }
+
+/* =====================================================================
+   前列（追跡怪異 / フィールド / 追跡人間）
+   ---------------------------------------------------------------------
+   3枠のグリッド。中央のフィールドは常に中央固定。
+   左右に追跡カードがいない場合は空きスペースになる。
+   ===================================================================== */
+.lane--front {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  justify-items: center;
+}
+.front-slot {
+  /* カード1枚分の高さを確保して、空でも前列の高さが安定するようにする */
+  min-height: var(--front-card-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.front-slot--youkai { justify-self: end; }   /* 中央フィールド寄りに */
+.front-slot--human  { justify-self: start; }
+
+/* =====================================================================
+   後列（追跡していない 怪異最大3＋人間最大3・横一列で最大6枚）
+   ---------------------------------------------------------------------
+   左＝怪異グループ / 右＝人間グループ。
+   カードは flex で自動的に縮むので、狭い画面でも横スクロールなしで収まる。
+   ===================================================================== */
+.lane--back {
+  display: flex;
+  gap: 10px;           /* 怪異グループと人間グループの間 */
+  align-items: stretch;
+}
+.back-group {
+  display: flex;
+  gap: 4px;
+  flex: 1 1 0;         /* 左右グループで幅を半分ずつ分け合う */
+  min-width: 0;
+}
+.back-group--human { justify-content: flex-end; }
+
+/* ---- 中央の戦場スペース（追跡・襲撃表示は将来Stage） ---- */
+.center-track {
+  position: relative;
+  min-height: 26px;
+  /* 盤面の余った縦の空きは、すべてこの中央スペースが受け取る。
+     こうすると、下側の後列カードと「操作中」ヘッダーの間に
+     無駄な空きができず、両陣営が中央をはさんで向かい合う形になる。 */
+  flex: 1 1 auto;
+}
+.center-track::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 50%;
+  height: 1px;
+  background: var(--line);
+}
+
+/* =====================================================================
+   カード共通
+   ===================================================================== */
+.card {
+  position: relative;
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* 前列カード（やや大きめ＝中央へ前進した見た目） */
+.card--front {
+  width: var(--front-card-w);
+  height: var(--front-card-h);
+  padding: 4px;
+  flex: 0 0 auto;
+}
+
+/* 後列カード（小さめ・6枚が横一列に収まるよう自動で縮む） */
+.card--back {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: var(--back-card-max);
+  height: var(--back-card-h);
+  padding: 3px;
+}
+
+/* 手札カード（大きめ） */
+.card--hand {
+  width: 104px;
+  min-height: 140px;
+  padding: 6px;
+  flex: 0 0 auto;
+}
+
+/* 陣営ごとの色分け（枠の色。文字でも陣営が分かる） */
+.card--owner-village {
+  border-color: var(--village-line);
+  background: linear-gradient(160deg, var(--village-soft), var(--panel-bg));
+}
+.card--owner-mansion {
+  border-color: var(--mansion-line);
+  background: linear-gradient(160deg, var(--mansion-soft), var(--panel-bg));
+}
+
+/* コスト（左上の丸） */
+.card__cost {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #000;
+  border: 1px solid var(--text-dim);
+  font-size: 10px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 種類ラベル（右上） */
+.card__type {
+  align-self: flex-end;
+  font-size: 8.5px;
+  color: var(--text-dim);
+  padding: 0 3px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* カード名 */
+.card__name {
+  font-size: 9px;
+  line-height: 1.15;
+  font-weight: bold;
+  margin-top: 2px;
+  word-break: break-word;
+  overflow: hidden;
+  /* 名前が長いときは行数を抑えて他の情報を隠さない */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.card--front .card__name { font-size: 10px; -webkit-line-clamp: 3; }
+.card--hand  .card__name { font-size: 12.5px; line-height: 1.25; margin-top: 4px; -webkit-line-clamp: 4; }
+
+/* スピード／体力 */
+.card__stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+  font-size: 9px;
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
+}
+.card--hand .card__stats { font-size: 11px; margin-top: 4px; padding-top: 3px; }
+.card__spd { color: #cfe8ff; white-space: nowrap; }
+.card__hp  { color: #ffd9d9; white-space: nowrap; }
+
+/* =====================================================================
+   操作中ヘッダー（独立領域・手札とは重ねない・不透明）
+   ===================================================================== */
+.op-header {
+  flex: 0 0 auto;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 4px 10px;
+  background: var(--frame-bg);   /* 不透明（後ろが透けない） */
+  border-top: 1px solid var(--line);
+}
+.op-header__label {
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+.op-header--village {
+  color: #c6e7dd;
+  border-left: 5px solid var(--village-line);
+  background: var(--village-soft);
+}
+.op-header--mansion {
+  color: #e7c6d8;
+  border-left: 5px solid var(--mansion-line);
+  background: var(--mansion-soft);
+}
+
+/* =====================================================================
+   手札（下端・横スクロールのみ）
+   ===================================================================== */
+#hand-wrap {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  background: var(--panel-bg);
+}
+#hand-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 8px 0;
+}
+#hand {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px 10px;
+  overflow-x: auto;   /* ここだけ横スクロール可 */
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* =====================================================================
+   クイック詳細（左上・重ね表示）
+   ===================================================================== */
+#quick-detail {
+  position: absolute;
+  top: 34px;
+  left: 8px;
+  width: 210px;
+  max-width: calc(100% - 16px);
+  max-height: 72%;
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  z-index: 30;
+  display: none;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+#quick-detail.is-open { display: block; }
+
+.detail__title {
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.detail__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+.detail__label { color: var(--text-dim); flex: 0 0 auto; }
+.detail__value { text-align: right; word-break: break-word; }
+.detail__block {
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.detail__text {
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text);
+}
+.detail__action {
+  margin-top: 8px;
+  text-align: center;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: bold;
+}
+.detail__action--disabled {
+  background: #201f30;
+  border: 1px dashed var(--text-dim);
+  color: var(--text-dim);
+}
+
+/* =====================================================================
+   拡大詳細（中央の大窓・背景を暗く・別機能）
+   ===================================================================== */
+#expanded-detail {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+#expanded-detail.is-open { display: flex; }
+.expanded__box {
+  width: 100%;
+  max-width: 320px;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+.expanded__box.card--owner-village { border-color: var(--village-line); }
+.expanded__box.card--owner-mansion { border-color: var(--mansion-line); }
+.expanded__title {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.expanded__body { flex: 1; overflow-y: auto; font-size: 13px; }
+.expanded__close {
+  margin-top: 12px;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text);
+  background: #26243a;
+  border: 1px solid var(--text-dim);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.expanded__close:active { background: #322f4a; }
+
+/* =====================================================================
+   横向き警告
+   ===================================================================== */
+#orientation-warning {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  background: var(--bg);
+}
+#orientation-warning.is-open { display: flex; }
+#orientation-warning p { font-size: 18px; line-height: 1.6; color: var(--text); }
+
+/* =====================================================================
+   ▼▼▼ Stage 2 追加分（開始画面・案内・確認・ログ・マリガン） ▼▼▼
+   ===================================================================== */
+
+/* hidden 属性が付いた要素は必ず隠す（flex 指定に負けないよう !important） */
+[hidden] { display: none !important; }
+
+/* ---------------- 開始画面 ---------------- */
+#start-screen {
+  width: 100%;
+  max-width: 430px;
+  padding: 28px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.start__box {
+  background: var(--frame-bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.start__title {
+  font-size: 26px;
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  text-align: center;
+  color: #d9c6e7;
+}
+.start__subtitle {
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-dim);
+  margin-top: -12px;
+}
+.start__section { display: flex; flex-direction: column; gap: 8px; }
+.start__label { font-size: 13px; color: var(--text-dim); }
+.start__hint { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+
+.start__choices { display: flex; gap: 10px; }
+.choice {
+  flex: 1;
+  padding: 12px 8px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.choice:active { background: #201f30; }
+/* 選ばれている先攻を強調 */
+.choice.is-chosen {
+  border-color: var(--village-line);
+  background: var(--village-soft);
+  color: #c6e7dd;
+  box-shadow: 0 0 0 1px var(--village-line) inset;
+}
+.choice[data-side="mansion"].is-chosen {
+  border-color: var(--mansion-line);
+  background: var(--mansion-soft);
+  color: #e7c6d8;
+  box-shadow: 0 0 0 1px var(--mansion-line) inset;
+}
+
+#seed-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  background: #0c0b16;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  /* 入力欄では文字選択を許可（誤操作防止の user-select:none を打ち消す） */
+  -webkit-user-select: text;
+  user-select: text;
+}
+#seed-input::placeholder { color: #55536e; }
+
+#start-btn {
+  padding: 14px;
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--text);
+  background: #2a2740;
+  border: 1px solid var(--mansion-line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+#start-btn:active { background: #35314f; }
+
+/* ---------------- 上部バー（シード・ログ） ---------------- */
+#top-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--line);
+  background: var(--frame-bg);
+}
+#seed-display { word-break: break-all; }
+#log-btn {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ---------------- マリガン確定バー ---------------- */
+#mulligan-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--village-soft);
+  border-bottom: 1px solid var(--line);
+}
+#mulligan-hint { font-size: 11px; color: #c6e7dd; }
+#mulligan-confirm {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--text);
+  background: #26243a;
+  border: 1px solid var(--village-line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+#mulligan-confirm:active { background: #322f4a; }
+
+/* マリガンで選択中の手札カード（枠を強調・番号は付けない） */
+.card--hand.is-selected {
+  outline: 3px solid #ffd36b;
+  outline-offset: -1px;
+  box-shadow: 0 0 12px rgba(255, 211, 107, 0.5);
+}
+
+/* ---------------- 案内オーバーレイ ---------------- */
+#guide-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.78);
+  text-align: center;
+}
+#guide-overlay.is-open { display: flex; }
+.guide__box { display: flex; flex-direction: column; gap: 10px; }
+.guide__line { font-size: 20px; font-weight: bold; line-height: 1.5; color: var(--text); }
+.guide__tap { margin-top: 10px; font-size: 13px; color: var(--text-dim); }
+
+/* ---------------- 確認ダイアログ ---------------- */
+#modal {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.78);
+}
+#modal.is-open { display: flex; }
+.modal__box {
+  width: 100%;
+  max-width: 300px;
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px;
+  text-align: center;
+}
+.modal__line { font-size: 14px; line-height: 1.6; color: var(--text); }
+.modal__buttons { display: flex; gap: 10px; margin-top: 16px; }
+.modal__btn {
+  flex: 1;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--text);
+  background: #26243a;
+  border: 1px solid var(--text-dim);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.modal__btn:active { background: #322f4a; }
+
+/* ---------------- ログ表示 ---------------- */
+#log-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 65;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.78);
+}
+#log-panel.is-open { display: flex; }
+.log__box {
+  width: 100%;
+  max-width: 340px;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+.log__title {
+  font-size: 15px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.log__list { flex: 1; overflow-y: auto; font-size: 12px; line-height: 1.5; }
+.log__row { padding: 2px 0; border-bottom: 1px solid #1e1d2e; word-break: break-word; }
+.log__close {
+  margin-top: 12px;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text);
+  background: #26243a;
+  border: 1px solid var(--text-dim);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.log__close:active { background: #322f4a; }
