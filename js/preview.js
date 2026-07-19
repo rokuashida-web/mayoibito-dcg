@@ -1574,25 +1574,57 @@ const play = {
 };
 
 /** ゲームを始める */
+/* 対戦開始前の設定画面で選ばれている先攻 */
+let startFirstSide = 'village';
+
+/** 開始画面を出す（まだ対戦は始めない） */
+function openStartScreen() {
+  const screen = document.getElementById('start-screen');
+  view.locked = true;
+  closeQuickDetail();
+  hideDim();
+  updateStartChoices();
+  screen.classList.add('is-open');
+}
+
+/** 先攻の選択の見た目を合わせる */
+function updateStartChoices() {
+  document.querySelectorAll('.start__choice').forEach(function (btn) {
+    btn.classList.toggle('is-on', btn.dataset.side === startFirstSide);
+  });
+}
+
+/** 開始画面のボタンをつなぐ（起動時に1回だけ） */
+function setupStartScreen() {
+  document.querySelectorAll('.start__choice').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      startFirstSide = btn.dataset.side;
+      updateStartChoices();
+    });
+  });
+
+  document.getElementById('start-btn').addEventListener('click', function () {
+    const input = document.getElementById('seed-input');
+    const seed = input ? input.value.trim() : '';
+    document.getElementById('start-screen').classList.remove('is-open');
+    startGame(startFirstSide, seed);
+  });
+}
+
+/** 対戦を始める（マリガンの演出へ入る） */
 function startGame(firstSide, seed) {
   Game.start(firstSide || 'village', seed || '');
   play.active = true;
   play.mode = 'start';
   play.handSnapshot = null;
-  view.locked = true;              // 画面をタップするまで操作できない
+  view.locked = true;
   view.handExpanded = false;
   setCandidate(null, null);
+  hideDim();
   renderAll();
 
-  // 暗転した画面をタップしたら、マリガンへ進む
-  const screen = document.getElementById('start-screen');
-  screen.classList.add('is-open');
-  screen.onclick = function () {
-    screen.onclick = null;
-    screen.classList.remove('is-open');
-    showToast('シード：' + Game.state.seed);
-    beginMulligan(Game.state.firstSide);
-  };
+  showToast('シード：' + Game.state.seed);
+  beginMulligan(Game.state.firstSide);
 }
 
 /** 手札の表示を、本物のゲーム状態から作り直す */
@@ -2448,25 +2480,118 @@ function afterAttack(side) {
 }
 
 /** 決着したとき（本格的なリザルト画面は H-5 で作ります） */
+/** 決着。大きく「決着」と出してから、リザルト画面を開く */
 function finishWithResult() {
   view.locked = true;
+  closeQuickDetail();
   renderAll();
-  const over = Game.state.gameOver;
-  const title = over.draw ? '引き分け' : (DECKS[over.winner].label + ' の勝ち');
-  const reasons = over.losers.map(function (l) {
-    return DECKS[l.side].label + '：' + l.reasons.join('／');
-  }).join('\n');
 
-  setTimeout(function () {
-    showDialog({
-      title: title,
-      message: reasons + '\n（' + over.turnCount + 'ターン目）\n（リザルト画面は H-5 で作ります）',
-      buttons: [{
-        label: 'はじめから', primary: true,
-        onClick: function () { startGame('village', ''); },
-      }],
+  playBanner('決着', { hold: 1200 }, openResultScreen);
+}
+
+/** 決着の画面を組み立てて開く */
+function openResultScreen() {
+  const st = Game.state;
+  const over = st.gameOver;
+  const screen = document.getElementById('result-screen');
+
+  // どちらが負けたか（引き分けなら両方）
+  const lostSides = over.losers.map(function (l) { return l.side; });
+  const isLoser = function (side) { return lostSides.indexOf(side) !== -1; };
+
+  // 1. 決着した場面
+  const phase = screen.querySelector('.result__phase');
+  phase.textContent = (over.phaseLabel || '') +
+    '（' + over.turnCount + 'ターン目・' + over.round + '巡目）';
+
+  // 2. 勝敗
+  const title = screen.querySelector('.result__title');
+  title.textContent = over.draw ? '引き分け' : (DECKS[over.winner].label + '\nの勝利');
+  title.classList.toggle('is-draw', !!over.draw);
+
+  // 3. 敗北の理由
+  screen.querySelector('.result__reason').textContent =
+    over.losers.map(function (l) {
+      return DECKS[l.side].label + '　' + l.reasons.join('／');
+    }).join('\n');
+
+  // 4. 両者の最終状態をならべる
+  const table = screen.querySelector('.result__table');
+  table.innerHTML = '';
+
+  const sides = ['village', 'mansion'];
+  const head = ['', '', ''];
+  sides.forEach(function (side, i) {
+    const el = document.createElement('div');
+    el.className = 'result__head' + (!over.draw && over.winner === side ? ' result__head--win' : '');
+    el.textContent = DECKS[side].label + (!over.draw && over.winner === side ? '　勝利' : '');
+    head[i === 0 ? 0 : 2] = el;
+  });
+  const headMid = document.createElement('div');
+  headMid.className = 'result__head';
+  table.appendChild(head[0]);
+  table.appendChild(headMid);
+  table.appendChild(head[2]);
+
+  const rows = [
+    ['場の人間', function (p) { return p.humans.length + '体'; }, function (p) { return p.humans.length === 0; }],
+    ['場の怪異', function (p) { return p.youkai.length + '体'; }, null],
+    ['ロスト', function (p) {
+      const limit = p.field.master.lostLimit;
+      return p.lost.length + (typeof limit === 'number' ? ' / ' + limit + '枚' : '枚');
+    }, function (p) {
+      const limit = p.field.master.lostLimit;
+      return (typeof limit === 'number') && p.lost.length >= limit;
+    }],
+    ['山札', function (p) { return p.deck.length + '枚'; }, function (p) { return p.deck.length === 0; }],
+    ['トラッシュ', function (p) { return p.trash.length + '枚'; }, null],
+    ['手札', function (p) { return p.hand.length + '枚'; }, null],
+  ];
+
+  rows.forEach(function (row) {
+    sides.forEach(function (side, i) {
+      const p = st.players[side];
+      const val = document.createElement('div');
+      val.className = 'result__val' + (row[2] && row[2](p) ? ' is-lose' : '');
+      val.textContent = row[1](p);
+
+      if (i === 0) {
+        table.appendChild(val);
+        const key = document.createElement('div');
+        key.className = 'result__key';
+        key.textContent = row[0];
+        table.appendChild(key);
+      } else {
+        table.appendChild(val);
+      }
     });
-  }, 900);
+  });
+
+  // 5. ボタン
+  const buttons = screen.querySelector('.result__buttons');
+  buttons.innerHTML = '';
+  const seed = st.seed;
+  const first = st.firstSide;
+
+  [
+    ['ログを見る', false, function () { openLog(); }],
+    ['同じ条件でもう一度', false, function () { closeResultScreen(); startGame(first, seed); }],
+    ['新しい対戦', true, function () { closeResultScreen(); openStartScreen(); }],
+  ].forEach(function (item) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'result__btn' + (item[1] ? ' result__btn--primary' : '');
+    btn.textContent = item[0];
+    btn.addEventListener('click', item[2]);
+    buttons.appendChild(btn);
+  });
+
+  screen.classList.add('is-open');
+}
+
+function closeResultScreen() {
+  document.getElementById('result-screen').classList.remove('is-open');
+  closeSheet();
 }
 
 /* =====================================================================
@@ -3081,7 +3206,7 @@ function openSettings() {
             label: 'はじめから', primary: true,
             onClick: function () {
               closeSheet();
-              startGame('village', input.value.trim());
+              startGame(startFirstSide, input.value.trim());
             },
           },
         ],
@@ -3281,6 +3406,7 @@ function setupPanel() {
    ===================================================================== */
 function init() {
   blockZoomGestures();   // スマホで画面が拡大されないようにする
+  setupStartScreen();
   document.body.classList.toggle('mirror-lanes', mirrorLanes);
   fitStage();
   setupPanel();
@@ -3318,8 +3444,8 @@ function init() {
   const restartBtn = document.getElementById('btn-restart');
   if (restartBtn) {
     restartBtn.addEventListener('click', function () {
-      const seed = (document.getElementById('seed-input') || {}).value || '';
-      startGame('village', seed);
+      const seed = (document.getElementById('panel-seed-input') || {}).value || '';
+      startGame(startFirstSide, seed);
     });
   }
 
@@ -3349,7 +3475,8 @@ function init() {
   document.getElementById('stage').addEventListener('pointerup', function (e) {
     // カード・ボタン・詳細・ドロップ先・各種画面の上は「空白」とみなさない（仕様書 13.3）
     if (e.target.closest('.card, .ui-box, #event-drop, #quick-detail, #zoom-detail, ' +
-                         '#dialog, #picker, #target-hint, #banner, #sheet, #start-screen')) return;
+                         '#dialog, #picker, #target-hint, #banner, #sheet, ' +
+                         '#start-screen, #result-screen')) return;
     closeQuickDetail();
     if (view.candidate) setCandidate(null, null);   // 追跡候補も解除する
     // マリガン中は手札を必ず開いたままにする（交換するカードを選ぶため）
@@ -3383,8 +3510,8 @@ function init() {
   window.addEventListener('resize', fitStage);
   window.addEventListener('orientationchange', fitStage);
 
-  // ゲームを開始する（H-1：初期化とマリガンまで）
-  startGame('village', '');
+  // まずは対戦開始前の設定画面を出す（先攻とシードを選んでもらう）
+  openStartScreen();
 }
 
 document.addEventListener('DOMContentLoaded', init);

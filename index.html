@@ -117,6 +117,17 @@
     <!-- 追跡選択中の仮矢印（カードより前に出す：仕様書 21.3） -->
     <svg id="drag-arrow" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
 
+    <!-- 決着の画面 -->
+    <div id="result-screen">
+      <div class="result">
+        <div class="result__phase"></div>
+        <div class="result__title"></div>
+        <div class="result__reason"></div>
+        <div class="result__table"></div>
+        <div class="result__buttons"></div>
+      </div>
+    </div>
+
     <!-- ターン交代のときに画面を暗くする幕 -->
     <div id="dim-screen"></div>
 
@@ -131,9 +142,29 @@
       </div>
     </div>
 
-    <!-- ゲーム開始前の画面 -->
+    <!-- 対戦開始前の設定画面（先攻選択・シード入力） -->
     <div id="start-screen">
-      <div class="start__text">タップしてゲームを開始</div>
+      <div class="start">
+        <div class="start__title">マヨイビト</div>
+        <div class="start__subtitle">v0.2</div>
+
+        <div class="start__section">
+          <div class="start__label">先攻を選ぶ</div>
+          <div class="start__choices">
+            <button type="button" class="start__choice" data-side="village">ヨマモリ村</button>
+            <button type="button" class="start__choice" data-side="mansion">黒薔薇の館</button>
+          </div>
+        </div>
+
+        <div class="start__section">
+          <div class="start__label">シード（空欄なら自動で決まります）</div>
+          <input id="seed-input" type="text" inputmode="text"
+                 placeholder="例：MAYO-1A2B-3C4D" autocomplete="off">
+          <div class="start__hint">同じシードなら、毎回同じ順番で山札が並びます。</div>
+        </div>
+
+        <button type="button" id="start-btn">対戦開始</button>
+      </div>
     </div>
 
     <!-- カードを選ぶ画面（効果でトラッシュや手札から選ぶとき） -->
@@ -209,7 +240,7 @@
 
   <div class="panel__group">
     <div class="panel__head">ゲーム進行（Stage H）</div>
-    <label>シード <input type="text" id="seed-input" placeholder="空欄なら自動" style="width:150px"></label>
+    <label>シード <input type="text" id="panel-seed-input" placeholder="空欄なら自動" style="width:150px"></label>
     <label><button type="button" id="btn-restart">はじめから</button></label>
   </div>
 

@@ -621,6 +621,104 @@ body.show-guides .ui-box { outline: 1px dashed rgba(122, 209, 255, 0.5); }
   background-color: rgba(255, 211, 107, 0.16);
 }
 
+/* =====================================================================
+   決着の画面
+   ===================================================================== */
+#result-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 166;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 18, 0.94);
+  padding: 50px;
+}
+#result-screen.is-open { display: flex; }
+
+.result {
+  width: 100%;
+  max-width: 920px;
+  max-height: 100%;
+  overflow-y: auto;
+  text-align: center;
+}
+
+.result__phase {
+  font-size: 30px;
+  color: #9fb0cc;
+  letter-spacing: 0.08em;
+}
+.result__title {
+  margin-top: 14px;
+  white-space: pre-line;    /* 陣営名と「の勝利」で行を分ける */
+  font-size: 96px;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  line-height: 1.15;
+  color: #ffe7a8;
+  text-shadow: 0 0 40px rgba(255, 200, 110, 0.5);
+}
+.result__title.is-draw { color: #cfe0ff; text-shadow: 0 0 40px rgba(150, 200, 255, 0.45); }
+
+.result__reason {
+  margin-top: 18px;
+  font-size: 30px;
+  line-height: 1.6;
+  color: #dbe6f8;
+  white-space: pre-wrap;
+}
+
+/* 両者の最終状態をならべた表 */
+.result__table {
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: 1fr 220px 1fr;
+  gap: 0 12px;
+  font-size: 28px;
+  color: #e8eefc;
+}
+.result__head {
+  padding: 12px 8px;
+  font-size: 30px;
+  font-weight: bold;
+  border-bottom: 3px solid var(--line);
+}
+.result__head--win { color: #ffe7a8; }
+.result__key {
+  padding: 12px 8px;
+  color: #9fb0cc;
+  font-size: 25px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.result__val {
+  padding: 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.result__val.is-lose { color: #ff9a9a; font-weight: bold; }
+
+.result__buttons {
+  margin-top: 40px;
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.result__btn {
+  font-size: 30px;
+  padding: 20px 34px;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: #1a2338;
+  color: #e8eefc;
+  cursor: pointer;
+}
+.result__btn--primary {
+  background: #2f4a7a;
+  border-color: #8fc0ff;
+  font-weight: bold;
+}
+
 /* ターン交代のときに画面を暗くする幕（大きな文字より後ろ） */
 #dim-screen {
   position: absolute;
@@ -639,7 +737,7 @@ body.show-guides .ui-box { outline: 1px dashed rgba(122, 209, 255, 0.5); }
 #sheet {
   position: absolute;
   inset: 0;
-  z-index: 162;
+  z-index: 172;
   display: none;
   align-items: center;
   justify-content: center;
@@ -752,17 +850,77 @@ body.show-guides .ui-box { outline: 1px dashed rgba(122, 209, 255, 0.5); }
 }
 #start-screen.is-open { display: flex; }
 
-.start__text {
-  font-size: 84px;
-  font-weight: bold;
-  letter-spacing: 0.1em;
-  color: #eef4ff;
-  text-shadow: 0 0 30px rgba(150, 200, 255, 0.6);
-  animation: start-pulse 1.8s ease-in-out infinite;
+.start {
+  width: 100%;
+  max-width: 860px;
+  max-height: 100%;
+  overflow-y: auto;
+  text-align: center;
 }
-@keyframes start-pulse {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
+
+.start__title {
+  font-size: 104px;
+  font-weight: bold;
+  letter-spacing: 0.14em;
+  color: #eef4ff;
+  text-shadow: 0 0 34px rgba(150, 200, 255, 0.55);
+}
+.start__subtitle {
+  margin-top: 6px;
+  font-size: 32px;
+  letter-spacing: 0.2em;
+  color: #9fb0cc;
+}
+
+.start__section { margin-top: 60px; }
+.start__label { font-size: 32px; color: #cfe0ff; }
+.start__hint { margin-top: 12px; font-size: 24px; color: #9fb0cc; }
+
+.start__choices {
+  margin-top: 18px;
+  display: flex;
+  gap: 22px;
+  justify-content: center;
+}
+.start__choice {
+  flex: 1 1 0;
+  font-size: 38px;
+  padding: 26px 10px;
+  border-radius: 14px;
+  border: 3px solid var(--line);
+  background: #1a2338;
+  color: #e8eefc;
+  cursor: pointer;
+}
+.start__choice.is-on {
+  background: #2f4a7a;
+  border-color: #8fc0ff;
+  font-weight: bold;
+}
+
+#seed-input {
+  margin-top: 18px;
+  width: 100%;
+  font-size: 34px;
+  padding: 20px 18px;
+  border-radius: 12px;
+  border: 3px solid var(--line);
+  background: #0e1524;
+  color: #e8eefc;
+  text-align: center;
+}
+
+#start-btn {
+  margin-top: 66px;
+  width: 100%;
+  font-size: 44px;
+  font-weight: bold;
+  padding: 30px 10px;
+  border-radius: 16px;
+  border: 3px solid #8fc0ff;
+  background: #2f4a7a;
+  color: #eef4ff;
+  cursor: pointer;
 }
 
 /* =====================================================================
@@ -889,7 +1047,7 @@ body.show-guides .ui-box { outline: 1px dashed rgba(122, 209, 255, 0.5); }
 #dialog {
   position: absolute;
   inset: 0;
-  z-index: 165;
+  z-index: 176;
   display: none;
   align-items: center;
   justify-content: center;
@@ -1019,7 +1177,7 @@ body.show-guides .ui-box { outline: 1px dashed rgba(122, 209, 255, 0.5); }
   left: 50%;
   bottom: 470px;
   transform: translateX(-50%);
-  z-index: 160;
+  z-index: 179;
   padding: 16px 30px;
   font-size: 32px;
   color: #fff;
@@ -1099,7 +1257,7 @@ body.show-guides .ui-box { outline: 1px dashed rgba(122, 209, 255, 0.5); }
 #zoom-detail {
   position: absolute;
   inset: 0;
-  z-index: 170;   /* 選択画面やダイアログの上に出す */
+  z-index: 177;   /* 選択画面やダイアログの上に出す */
   display: none;
   align-items: center;
   justify-content: center;
