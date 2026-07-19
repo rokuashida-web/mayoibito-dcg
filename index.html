@@ -61,7 +61,7 @@
     </div>
 
     <!-- 3 相手のトラッシュ -->
-    <div class="ui-box hexbtn hexbtn--opp-trash" data-no="3"><span>トラッシュ 5</span></div>
+    <div class="ui-box hexbtn hexbtn--opp-trash" id="btn-opp-trash" data-no="3"><span>トラッシュ 5</span></div>
 
     <!-- 4 相手の気力数 -->
     <div class="ui-box energy-box energy-box--opp" data-no="4">
@@ -84,7 +84,7 @@
     <div class="ui-box hexbtn hexbtn--log" id="btn-log" data-no="11"><span>ログ</span></div>
 
     <!-- 14 メイン終了／対象確定 -->
-    <div class="ui-box hexbtn hexbtn--main" id="btn-main" data-no="14"><span>メイン終了</span></div>
+    <div class="ui-box hexbtn hexbtn--main" id="btn-main" data-no="14"><span>ターン終了</span></div>
 
     <!-- 15 自分の山札（枚数は常時表示） -->
     <div class="ui-box deck-box deck-box--self" data-no="15">
@@ -98,7 +98,7 @@
     </div>
 
     <!-- 19 自分のトラッシュ -->
-    <div class="ui-box hexbtn hexbtn--self-trash" data-no="19"><span>トラッシュ 8</span></div>
+    <div class="ui-box hexbtn hexbtn--self-trash" id="btn-self-trash" data-no="19"><span>トラッシュ 8</span></div>
 
     <!-- 20 自分のフィールドカード＋自分のロスト数 -->
     <div class="ui-box field-box field-box--self" data-no="20">
@@ -118,11 +118,53 @@
     <!-- 追跡選択中の仮矢印（カードより前に出す：仕様書 21.3） -->
     <svg id="drag-arrow" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
 
+    <!-- ログ・トラッシュ・設定で使い回す画面 -->
+    <div id="sheet">
+      <div class="sheet">
+        <div class="sheet__title"></div>
+        <div class="sheet__body"></div>
+        <div class="sheet__buttons">
+          <button type="button" class="dlg__btn dlg__btn--primary" id="sheet-close">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ゲーム開始前の画面 -->
+    <div id="start-screen">
+      <div class="start__text">タップしてゲームを開始</div>
+    </div>
+
+    <!-- カードを選ぶ画面（効果でトラッシュや手札から選ぶとき） -->
+    <div id="picker">
+      <div class="pick">
+        <div class="pick__title"></div>
+        <div class="pick__message"></div>
+        <div class="pick__grid"></div>
+        <div class="pick__buttons"></div>
+      </div>
+    </div>
+
+    <!-- 盤面のカードを選ぶときの案内 -->
+    <div id="target-hint"></div>
+
+    <!-- 案内・確認ダイアログ（マリガン、警告、対象選択などに使う） -->
+    <div id="dialog">
+      <div class="dlg">
+        <div class="dlg__title"></div>
+        <div class="dlg__message"></div>
+        <div class="dlg__buttons"></div>
+      </div>
+    </div>
+
     <!-- 画面中央の大きな文字（「追跡」「襲撃」：仕様書 20・21.4） -->
     <div id="banner"><span></span></div>
 
     <!-- イベント用の一時的なドロップ先（仕様書 18.3。ドラッグ中だけ出る） -->
     <div id="event-drop" class="is-hidden"></div>
+
+    <!-- 移動演出の層。手札より後ろを通るものと、手札の上を通るものの2枚 -->
+    <div id="fly-layer"></div>
+    <div id="fly-layer-top"></div>
 
     <!-- ドラッグ中のカードを乗せる層（最前面） -->
     <div id="drag-layer"></div>
@@ -161,6 +203,12 @@
     <div class="panel__head">追跡</div>
     <label><input type="checkbox" id="t-self" checked> 自分の怪異 → 相手の人間</label>
     <label><input type="checkbox" id="t-opp" checked> 相手の怪異 → 自分の人間</label>
+  </div>
+
+  <div class="panel__group">
+    <div class="panel__head">ゲーム進行（Stage H）</div>
+    <label>シード <input type="text" id="seed-input" placeholder="空欄なら自動" style="width:150px"></label>
+    <label><button type="button" id="btn-restart">はじめから</button></label>
   </div>
 
   <div class="panel__group">
@@ -212,6 +260,10 @@
 </div>
 
 <script src="js/cards.js"></script>
+<script src="js/decks.js"></script>
+<script src="js/random.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/game.js"></script>
 <script src="js/card-images.js"></script>
 <script src="js/preview.js"></script>
 </body>

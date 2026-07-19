@@ -302,10 +302,8 @@ body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
 #drag-arrow { z-index: 145; }   /* 仮矢印はカードより前に出す（仕様書 21.3） */
 
 .conveyor { transform-box: view-box; }
-.conveyor--down { animation: conveyor-down var(--pursuit-arrow-speed) linear infinite; }
-.conveyor--up   { animation: conveyor-up   var(--pursuit-arrow-speed) linear infinite; }
-@keyframes conveyor-down { from { transform: translateY(0); } to { transform: translateY(var(--step, 44px)); } }
-@keyframes conveyor-up   { from { transform: translateY(0); } to { transform: translateY(calc(-1 * var(--step, 44px))); } }
+/* 流れる動きは preview.js が作ります。
+   速さを変えるときに位置が飛ばないよう、再生速度だけを変えられるようにするためです。 */
 
 .chevron {
   fill: none;
@@ -314,17 +312,19 @@ body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.5;                 /* 半透明（仕様書 21.2） */
+  transform-box: fill-box;      /* 山形1つ分を基準に拡大する */
+  transform-origin: center;
+  transition: transform 0.18s ease, stroke-width 0.18s ease,
+              opacity 0.18s ease, stroke 0.18s ease;
 }
 
-/* 襲撃時は赤く、速く（仕様書 21.4） */
-#pursuit-arrows.is-attack .chevron {
+/* 襲撃時は赤く、速く（仕様書 21.4）
+   襲撃しているペアの矢印だけに付けます。 */
+.chevron.is-attack {
   stroke: var(--pursuit-attack-color);
   opacity: 0.95;
-  stroke-width: 16;
-}
-#pursuit-arrows.is-attack .conveyor--down,
-#pursuit-arrows.is-attack .conveyor--up {
-  animation-duration: var(--pursuit-attack-speed);
+  stroke-width: 15;
+  transform: scaleX(1.55) scaleY(1.3);   /* 描き直さずに横へ広げる */
 }
 
 /* 追跡選択中の仮矢印（細い線） */
@@ -639,6 +639,312 @@ body.hide-numbers .ui-box::after { display: none; }
   background-color: rgba(255, 211, 107, 0.16);
 }
 
+/* =====================================================================
+   ログ・トラッシュ・設定で使い回す画面
+   ===================================================================== */
+#sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 162;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 40px;
+}
+#sheet.is-open { display: flex; }
+
+.sheet {
+  width: 100%;
+  max-width: 980px;
+  max-height: 100%;
+  background: #121a2c;
+  border: 3px solid var(--line);
+  border-radius: 18px;
+  padding: 26px 28px;
+  display: flex;
+  flex-direction: column;
+}
+.sheet__title { font-size: 48px; font-weight: bold; text-align: center; }
+.sheet__body {
+  margin-top: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  flex: 1;
+  min-height: 0;
+}
+.sheet__buttons { margin-top: 22px; display: flex; justify-content: center; }
+
+/* ログの1行 */
+.log__line {
+  font-size: 28px;
+  line-height: 1.5;
+  color: #d8e2f4;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: pre-wrap;
+}
+.log__line:nth-child(odd) { background: rgba(255, 255, 255, 0.035); }
+.log__empty { font-size: 30px; color: #9fb0cc; text-align: center; padding: 40px 0; }
+
+/* トラッシュの中身 */
+.trash__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  padding: 6px;
+}
+.trash__card {
+  width: 150px;
+  aspect-ratio: 63 / 88;
+  background-size: cover;
+  background-position: center;
+  border-radius: 8px;
+  filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.55));
+}
+
+/* 設定の項目 */
+.set__row { padding: 18px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.set__label { font-size: 32px; font-weight: bold; }
+.set__note { margin-top: 6px; font-size: 24px; color: #9fb0cc; }
+.set__choices { margin-top: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+.set__choice {
+  font-size: 28px;
+  padding: 12px 24px;
+  border-radius: 10px;
+  border: 2px solid var(--line);
+  background: #1a2338;
+  color: #e8eefc;
+  cursor: pointer;
+}
+.set__choice.is-on {
+  background: #2f4a7a;
+  border-color: #8fc0ff;
+  font-weight: bold;
+}
+.set__seed {
+  margin-top: 12px;
+  font-size: 28px;
+  padding: 10px 14px;
+  width: 100%;
+  border-radius: 8px;
+  border: 2px solid var(--line);
+  background: #0e1524;
+  color: #e8eefc;
+}
+
+/* 効果が発動するカードの強調 */
+.card.is-activating,
+.card.has-image.is-activating {
+  transform: translateY(-26px);
+  filter: brightness(1.4) drop-shadow(0 0 28px rgba(255, 232, 160, 0.95));
+  transition: transform 0.22s ease, filter 0.22s ease;
+  z-index: 6;
+}
+
+/* =====================================================================
+   ゲーム開始前の画面
+   ===================================================================== */
+#start-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 180;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.9);
+}
+#start-screen.is-open { display: flex; }
+
+.start__text {
+  font-size: 84px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  color: #eef4ff;
+  text-shadow: 0 0 30px rgba(150, 200, 255, 0.6);
+  animation: start-pulse 1.8s ease-in-out infinite;
+}
+@keyframes start-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* =====================================================================
+   カードを選ぶ画面（効果でトラッシュや手札から選ぶとき）
+   ===================================================================== */
+#picker {
+  position: absolute;
+  inset: 0;
+  z-index: 158;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  padding: 40px;
+}
+#picker.is-open { display: flex; }
+
+.pick {
+  width: 100%;
+  max-width: 960px;
+  max-height: 100%;
+  background: #121a2c;
+  border: 3px solid var(--line);
+  border-radius: 18px;
+  padding: 26px 28px;
+  display: flex;
+  flex-direction: column;
+}
+.pick__title { font-size: 48px; font-weight: bold; text-align: center; }
+.pick__message {
+  margin-top: 10px;
+  font-size: 30px;
+  color: #d8e2f4;
+  text-align: center;
+}
+.pick__grid {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: 6px;
+}
+.pick__card {
+  width: 160px;
+  aspect-ratio: 63 / 88;
+  background-size: cover;
+  background-position: center;
+  border-radius: 8px;
+  position: relative;
+  cursor: pointer;
+  filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.55));
+}
+/* 選べるカードは少し光らせ、選べないカードは暗くする */
+.pick__card.is-selectable {
+  box-shadow: 0 0 0 3px rgba(150, 220, 255, 0.75),
+              0 0 20px 5px rgba(120, 195, 255, 0.45);
+}
+.pick__card.is-locked {
+  filter: brightness(0.42) saturate(0.6);
+  cursor: default;
+}
+
+.pick__card.is-picked {
+  outline: 5px solid #ffd36b;
+  outline-offset: 3px;
+  filter: drop-shadow(0 0 16px rgba(255, 211, 107, 0.9));
+}
+.pick__order {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #ffd36b;
+  color: #1a1f2e;
+  font-size: 26px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pick__buttons {
+  margin-top: 22px;
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+/* 盤面のカードを選ぶときの案内バー */
+#target-hint {
+  position: absolute;
+  left: 50%;
+  top: 620px;
+  transform: translateX(-50%);
+  z-index: 147;
+  display: none;
+  padding: 16px 34px;
+  font-size: 34px;
+  font-weight: bold;
+  color: #1a1f2e;
+  background: #ffd36b;
+  border-radius: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+#target-hint.is-open { display: block; }
+
+/* 効果の対象として選べるカード */
+.card.is-target {
+  outline: 5px solid #ffd36b;
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+/* =====================================================================
+   案内・確認ダイアログ
+   ボタンは 左＝戻る／右＝進む の並びで統一します（v0.1からの約束）
+   ===================================================================== */
+#dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 165;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  padding: 40px;
+}
+#dialog.is-open { display: flex; }
+
+.dlg {
+  width: 100%;
+  max-width: 860px;
+  background: #121a2c;
+  border: 3px solid var(--line);
+  border-radius: 18px;
+  padding: 34px 36px;
+  text-align: center;
+}
+.dlg__title { font-size: 54px; font-weight: bold; }
+.dlg__message {
+  margin-top: 18px;
+  font-size: 34px;
+  line-height: 1.5;
+  color: #d8e2f4;
+  white-space: pre-wrap;
+}
+.dlg__buttons {
+  margin-top: 30px;
+  display: flex;
+  gap: 22px;
+  justify-content: center;
+}
+.dlg__btn {
+  min-width: 240px;
+  padding: 18px 30px;
+  font-size: 34px;
+  font-weight: bold;
+  color: var(--text);
+  background: #26314e;
+  border: 2px solid #9fb0cf;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.dlg__btn--primary { background: #2f4a7a; border-color: #ffd36b; }
+
+/* マリガンで交換に選んだ手札 */
+.fan-card.is-mulligan {
+  filter: drop-shadow(0 0 18px rgba(120, 200, 255, 0.95)) brightness(0.75);
+}
+
 /* 画面中央の大きな文字（「追跡」「襲撃」：仕様書 20・21.4） */
 #banner {
   position: absolute;
@@ -651,6 +957,12 @@ body.hide-numbers .ui-box::after { display: none; }
 }
 #banner.is-open { display: flex; }
 #banner span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.06;
+  white-space: nowrap;      /* 中途半端な位置で折り返さない */
+  text-align: center;
   font-size: 190px;
   font-weight: bold;
   letter-spacing: 0.12em;
@@ -662,6 +974,49 @@ body.hide-numbers .ui-box::after { display: none; }
 @keyframes banner-in {
   from { opacity: 0; transform: scale(0.7); }
   to   { opacity: 1; transform: scale(1); }
+}
+
+/* 移動演出の層。
+   fly-layer     … 手札（z-index 50）より後ろ。フィールドカードよりは前。
+   fly-layer-top … 手札より前。手札から出ていく動きに使う。 */
+#fly-layer,
+#fly-layer-top {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#fly-layer { z-index: 45; }
+#fly-layer-top { z-index: 55; }
+
+/* 移動演出の「カード状の光」。山札表示のおよそ半分の大きさ。 */
+.fly-light {
+  position: absolute;
+  width: 88px;
+  aspect-ratio: 63 / 88;
+  border-radius: 10px;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+  background: linear-gradient(155deg,
+              rgba(255, 255, 255, 0.95),
+              rgba(165, 220, 255, 0.72));
+  box-shadow: 0 0 18px 6px rgba(160, 215, 255, 0.75),
+              0 0 48px 16px rgba(110, 185, 255, 0.38);
+}
+
+/* イベントを使い終えてトラッシュへ置くときの、小さな光 */
+.fly-light--small {
+  width: 54px;
+  box-shadow: 0 0 12px 4px rgba(255, 200, 140, 0.7),
+              0 0 30px 10px rgba(255, 155, 90, 0.3);
+}
+
+/* トラッシュや山札へ戻る動きは暖色にして、増える動きと区別する */
+.fly-light--warm {
+  background: linear-gradient(155deg,
+              rgba(255, 244, 220, 0.95),
+              rgba(255, 194, 140, 0.78));
+  box-shadow: 0 0 18px 6px rgba(255, 200, 140, 0.7),
+              0 0 48px 16px rgba(255, 155, 90, 0.35);
 }
 
 /* 短いお知らせ（ドロップ失敗の理由など） */
@@ -718,6 +1073,23 @@ body.hide-numbers .ui-box::after { display: none; }
 .qd__stat b { font-size: 44px; color: var(--text); margin-left: 6px; }
 .qd__stat.is-up b { color: #8ef5a0; }
 .qd__stat.is-down b { color: #ff9a9a; }
+.qd__cond,
+.zd__cond {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(120, 195, 255, 0.14);
+  border-left: 5px solid rgba(150, 220, 255, 0.85);
+  color: #dceaff;
+  white-space: pre-wrap;
+}
+.qd__cond.is-met,
+.zd__cond.is-met {
+  background: rgba(140, 235, 170, 0.16);
+  border-left-color: rgba(150, 240, 180, 0.9);
+  color: #dcffe6;
+}
+
 .qd__text {
   margin-top: 12px;
   font-size: 38px;
@@ -733,7 +1105,7 @@ body.hide-numbers .ui-box::after { display: none; }
 #zoom-detail {
   position: absolute;
   inset: 0;
-  z-index: 120;
+  z-index: 170;   /* 選択画面やダイアログの上に出す */
   display: none;
   align-items: center;
   justify-content: center;
@@ -826,6 +1198,10 @@ body.hide-numbers .ui-box::after { display: none; }
 .fan-card.is-selected {
   /* 重ね順は preview.js が最前面に設定する */
   filter: drop-shadow(0 0 18px rgba(255, 211, 107, 0.9));
+}
+/* いま出せないカードは、選んでも光らせない（詳細は普通に見られる） */
+.fan-card.is-selected.is-unplayable {
+  filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.55));
 }
 
 /* =====================================================================

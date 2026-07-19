@@ -49,6 +49,10 @@ const ENERGY_MAX = 10;   // 気力の上限（仕様書 9.4）
 const MAX_HUMANS = 3;    // 人間エリアの上限（仕様書 5）
 const MAX_YOUKAI = 3;    // 怪異エリアの上限（仕様書 5）
 
+/* v0.2 での追加：手札上限（v0.2仕様書 22.1）
+   「ドロー」に限らず、カードを手札へ加えるすべての処理に適用します。 */
+const HAND_LIMIT = 10;
+
 /* =====================================================================
    カードの複製（マスターは書き換えない）
    ===================================================================== */
@@ -217,6 +221,13 @@ const Game = {
       const drawnNames = [];
       for (let i = 0; i < count; i++) {
         const card = p.deck.shift();
+        // 手札上限はすべての「手札へ加える処理」に適用する（仕様書 22.1）
+        if (p.hand.length >= HAND_LIMIT) {
+          p.trash.push(card);
+          st.log.push('手札上限のため、《' + card.master.name +
+                      '》は手札に加わらずトラッシュへ置かれました。');
+          continue;
+        }
         p.hand.push(card);
         drawnNames.push(card.master.name);
       }
@@ -243,8 +254,8 @@ const Game = {
       return null;
     }
     const card = p.deck.shift();
-    p.hand.push(card);
-    st.log.push('ドロー：' + p.label + ' ' + card.master.name);
+    // 手札が上限なら、手札には加わらずトラッシュへ置く（仕様書 22.3）
+    this._addFromDeckToHand(side, card, 'ドロー');
 
     // 「山札が0枚になった瞬間」に敗北する（仕様書 6）
     // 最後の1枚を手札へ移す処理は行い、その直後に判定する。
@@ -472,6 +483,11 @@ const Game = {
     const m = inst.master;
     const reasons = [];
 
+    // そのカードが本当に手札にあるか（効果ですでに捨てられている場合などを防ぐ）
+    if (p.hand.indexOf(inst) === -1) {
+      return { ok: false, reasons: ['そのカードは手札にありません。'] };
+    }
+
     // 気力が足りているか
     const cost = (typeof m.cost === 'number') ? m.cost : 0;
     if (p.energy < cost) {
@@ -492,6 +508,82 @@ const Game = {
     }
 
     return { ok: reasons.length === 0, reasons: reasons };
+  },
+
+  /* =============================================================
+     メイン終了時の警告判定（v0.2仕様書 24）
+     -------------------------------------------------------------
+     「得か損か」は判定しません。使ったときに意味のある変化が
+     実際に起きるかどうかだけを見ます（24.4）。
+     ドラッグ・ボタン・終了警告で同じ判定を使います。
+     ============================================================= */
+
+  /** そのカードを今このプレイヤーが合法的に使えるか（canPlay と同じ判定） */
+  canLegallyPlayCard: function (side, inst) {
+    return this.canPlay(side, inst).ok;
+  },
+
+  /**
+   * 使ったときに、意味のある状態変化が起きるか（仕様書 24.2〜24.3）
+   * ・人間／怪異は、登場すること自体を有効とみなす
+   * ・グッズは装備できる対象がいれば有効（対象の有無は canPlay が見る）
+   * ・イベントは、不発に終わるなら無効とみなす
+   */
+  wouldResolveMeaningfully: function (side, inst) {
+    const st = this.state;
+    const p = st.players[side];
+    const opp = st.players[otherSide(side)];
+    const m = inst.master;
+
+    if (m.type === 'human' || m.type === 'youkai') return true;
+    if (m.type === 'goods') return true;
+
+    if (m.type === 'event') {
+      switch (inst.cardId) {
+
+        // 境界線：手札1枚を捨てて2枚引く。
+        // 捨てられる手札があるか、引ける山札があれば意味がある。
+        case 'event_kyoukaisen': {
+          const othersInHand = p.hand.length - 1;   // このカード自身を除く
+          return othersInHand > 0 || p.deck.length > 0;
+        }
+
+        // 差し伸べる手：トラッシュから〈村〉の人間／怪異／グッズを回収する。
+        // 回収できるカードが1枚もなければ不発。
+        case 'village_sashinoberu': {
+          return p.trash.some(function (c) {
+            const t = c.master.type;
+            const isTargetType = (t === 'human' || t === 'youkai' || t === 'goods');
+            const traits = c.master.traits || [];
+            return isTargetType && traits.indexOf('村') !== -1;
+          });
+        }
+
+        // 黒薔薇の策略：自分の場にイザベラがいて、相手に怪異がいるときだけ働く。
+        case 'mansion_sakuryaku': {
+          const hasIsabella = p.youkai.some(function (c) {
+            return c.cardId === 'mansion_isabella';
+          });
+          return hasIsabella && opp.youkai.length > 0;
+        }
+
+        default:
+          return true;
+      }
+    }
+    return true;
+  },
+
+  /**
+   * 手札に「今使うと実際に何かが起きるカード」が1枚以上あるか（仕様書 24.1）
+   * メイン終了の警告を出すかどうかの判断に使います。
+   */
+  hasMeaningfulPlay: function (side) {
+    const self = this;
+    return this.state.players[side].hand.some(function (inst) {
+      return self.canLegallyPlayCard(side, inst) &&
+             self.wouldResolveMeaningfully(side, inst);
+    });
   },
 
   /** 気力を支払う（内部用） */
@@ -936,12 +1028,55 @@ const Game = {
     // 倒れたかどうかは、このあと recalcAndResolveDeaths で判定する
   },
 
-  /** トラッシュからカードを手札へ戻す */
+  /* =============================================================
+     手札上限（v0.2仕様書 22）
+     -------------------------------------------------------------
+     手札は10枚まで。カードを手札へ加えるすべての処理で確認します。
+     複数枚を加えるときは、1枚ずつ順に確認します（22.2）。
+     ============================================================= */
+
+  /** 手札がいっぱいかどうか */
+  isHandFull: function (side) {
+    return this.state.players[side].hand.length >= HAND_LIMIT;
+  },
+
+  /**
+   * 山札から取り出したカードを手札へ加える（仕様書 22.3）
+   * 手札が上限のときは、公開してトラッシュへ置きます。
+   * @returns 手札に加わったら true
+   */
+  _addFromDeckToHand: function (side, card, label) {
+    const st = this.state;
+    const p = st.players[side];
+
+    if (p.hand.length >= HAND_LIMIT) {
+      p.trash.push(card);
+      st.log.push('手札上限のため、《' + card.master.name +
+                  '》は手札に加わらずトラッシュへ置かれました。');
+      return false;
+    }
+    p.hand.push(card);
+    st.log.push((label || 'ドロー') + '：' + p.label + ' ' + card.master.name);
+    return true;
+  },
+
+  /**
+   * トラッシュからカードを手札へ戻す（仕様書 22.4）
+   * 手札が上限のときは、トラッシュ内の元の位置に残します。
+   * トラッシュの最新位置へ置き直さないことが大切です。
+   */
   moveTrashToHand: function (side, inst) {
     const st = this.state;
     const p = st.players[side];
     const i = p.trash.indexOf(inst);
     if (i === -1) return false;
+
+    if (p.hand.length >= HAND_LIMIT) {
+      st.log.push('手札上限のため、《' + inst.master.name +
+                  '》を手札に加えられませんでした。');
+      return false;   // 位置を変えずトラッシュに残す
+    }
+
     p.trash.splice(i, 1);
     p.hand.push(inst);
     st.log.push('回収：' + p.label + ' ' + inst.master.name + '（トラッシュ → 手札）');
@@ -983,8 +1118,8 @@ const Game = {
     p.deck.splice(0, looked.length);
 
     if (taken) {
-      p.hand.push(taken);
-      st.log.push('回収：' + p.label + ' ' + taken.master.name + '（山札から手札へ）');
+      // 手札が上限なら、公開してトラッシュへ置く（仕様書 22.3）
+      this._addFromDeckToHand(side, taken, '回収');
     }
 
     // 残りをシード付き乱数で無作為に並べ替えて山札の下へ
