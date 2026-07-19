@@ -24,13 +24,26 @@
   --fan-arc: 30px;
   --fan-spread: 20deg;
   --fan-lift: 70px;             /* 選択したカードのせり出し量 */
-  --fan-bottom: 70px;           /* 画面下端からの距離（大きいほど上へ） */
+  --fan-selected-scale: 1.14;   /* 選択したカードの拡大率 */
+  --fan-bottom: 90px;           /* 画面下端からの距離（大きいほど上へ） */
 
   /* ---- 場（盤面・山札・各ボタン）をまとめて上下させる量 ----
      上端UIとのすき間が空きすぎる分を詰めるために使います。
      値を大きくするほど、場の要素が一体のまま上へ動きます。
      並びのバランスは崩れません（全部が同じ量だけ動くため）。 */
   --play-shift: 75px;
+
+  /* ---- フィールドカードの表示の大きさ ---- */
+  --field-h: 134px;
+
+  /* ---- 現在値オーバーレイ（カード画像の上に重ねる今の数値） ----
+     カード画像に印刷されている数字は「基礎値」なので、
+     補正やダメージを反映した「今の値」をこの位置に重ねます。
+     位置はカード幅・高さに対する割合で指定します。 */
+  --ov-size: 0.30;       /* 数値枠の大きさ（カード幅に対する割合） */
+  --ov-left: 0;          /* 並びの左端（カード幅に対する割合） */
+  --ov-bottom: 0;        /* 並びの下端（カード高さに対する割合） */
+  --ov-gap: 0;           /* 枠と枠のすき間（0で枠どうしが接する） */
 
   /* ---- 追跡矢印（Stage F で本実装） ---- */
   --pursuit-arrow-speed: 1.8s;
@@ -112,6 +125,9 @@ html, body {
   position: relative;
   aspect-ratio: 63 / 88;
   background: var(--card-face);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   border: 2px solid var(--card-line);
   border-radius: 8px;
   color: var(--text-dark);
@@ -129,6 +145,63 @@ html, body {
   border-color: #0d1526;
   color: #93a3c4;
 }
+.card__label { font-size: 20px; line-height: 1.3; }
+/* 画像付きのカードは、カード絵そのものが枠を持っている。
+   下地の白や枠線が角の透明部分からはみ出さないよう消しておく。 */
+.card.has-image {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.55));
+}
+.card.has-image > .card__label { display: none; }
+.card--landscape { aspect-ratio: 1039 / 744; }
+
+/* --- 現在値オーバーレイ ---
+   カード画像に印刷された数字の上に、今の値を重ねます。
+   丸だと隣とぶつかるため、四角の枠を横一列に並べています。
+   （左から スピード / 体力 / 蓄積ダメージ）
+   ------------------------------------------------------------------ */
+.ov-row {
+  position: absolute;
+  left: calc(var(--ov-left) * 100%);
+  bottom: calc(var(--ov-bottom) * 100%);
+  display: flex;
+  align-items: stretch;
+  /* すき間は数字の大きさに連動させる（カードが小さくなっても比率が保たれる） */
+  gap: calc(var(--ov-gap) * 1em);
+  /* 文字サイズはカード幅に連動（.card に font-size: カード幅 を入れてある） */
+  font-size: calc(var(--ov-size) * 0.62em);
+  z-index: 3;
+}
+.ov {
+  /* ここから下の em は「この枠の文字サイズ」が基準になる */
+  min-width: 1.05em;
+  padding: 0.16em 0.18em;
+  border-radius: 0.22em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  line-height: 1;
+  color: #fff;
+  background: rgba(8, 10, 18, 0.9);
+  border: 0.09em solid rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+/* 基礎値から上がっている／下がっているときの色分け */
+.ov.is-up   { color: #8ef5a0; border-color: #8ef5a0; }
+.ov.is-down { color: #ff9a9a; border-color: #ff9a9a; }
+/* 蓄積ダメージ用の赤枠。
+   盤面では体力の枠が赤くなることで把握できるため表示していません。
+   拡大詳細などで必要になったときのために定義だけ残しています。 */
+.ov--dmg {
+  background: #b8232f;
+  border-color: #ffd9dc;
+  color: #fff;
+}
+
 .card__no {
   position: absolute;
   top: 4px;
@@ -166,25 +239,31 @@ body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
 .zone--opp-normal-human  { left: 101px; top: calc(250px - var(--play-shift)); width: 398px; }
 .zone--opp-normal-youkai { left: 581px; top: calc(250px - var(--play-shift)); width: 398px; }
 .zone--opp-normal-human .card,
-.zone--opp-normal-youkai .card { width: var(--opp-normal-w, 148px); }
+.zone--opp-normal-youkai .card {
+  width: var(--opp-normal-w, 148px);
+  font-size: var(--opp-normal-w, 148px);   /* 現在値バッジの文字がこの幅に連動する */
+}
 
 /* --- 相手の追跡カード（左：追跡されている人間／右：追跡している怪異） --- */
 .zone--opp-track-human  { left: 289px; top: calc(500px - var(--play-shift)); width: 215px; }
 .zone--opp-track-youkai { left: 583px; top: calc(500px - var(--play-shift)); width: 215px; }
 .zone--opp-track-human .card,
-.zone--opp-track-youkai .card { width: 215px; }
+.zone--opp-track-youkai .card { width: 215px; font-size: 215px; }
 
 /* --- 自分の追跡カード（左：追跡している怪異／右：追跡されている人間） --- */
 .zone--self-track-youkai { left: 285px; top: calc(925px - var(--play-shift)); width: 225px; }
 .zone--self-track-human  { left: 578px; top: calc(925px - var(--play-shift)); width: 225px; }
 .zone--self-track-youkai .card,
-.zone--self-track-human .card { width: 225px; }
+.zone--self-track-human .card { width: 225px; font-size: 225px; }
 
 /* --- 自分の通常盤面（手前・大きめ） --- */
 .zone--self-normal-youkai { left: 66px;  top: calc(1355px - var(--play-shift)); width: 468px; }
 .zone--self-normal-human  { left: 546px; top: calc(1355px - var(--play-shift)); width: 468px; }
 .zone--self-normal-youkai .card,
-.zone--self-normal-human .card { width: var(--self-normal-w, 175px); }
+.zone--self-normal-human .card {
+  width: var(--self-normal-w, 175px);
+  font-size: var(--self-normal-w, 175px);
+}
 
 /* 奥のカードを少し小さく見せる（遠近感の補助） */
 .zone--opp-normal-human,
@@ -296,33 +375,48 @@ body.hide-numbers .ui-box::after { display: none; }
 
 /* --- フィールドカード＋ロスト数（2 / 20） --- */
 .field-box {
-  width: 195px;
-  height: 108px;
-  gap: 8px;
+  width: 210px;
+  height: var(--field-h);
   background: #0e1526;
   border: 2px solid var(--line);
   border-radius: 10px;
-  padding: 6px;
+  padding: 3px;
 }
-.field-box--self { left: 445px; top: 1812px; }
+.field-box--self { left: 430px; top: calc(1920px - var(--field-h)); }
 .field-box--opp  { left: 440px; top: 0px; }
 .field-box__card {
-  width: 62px;
-  aspect-ratio: 63 / 88;
+  width: 100%;
+  height: 100%;              /* 枠いっぱいに大きく表示する */
   background: var(--card-face);
+  background-size: cover;
+  background-position: center;
   border: 2px solid var(--card-line);
   border-radius: 5px;
   color: var(--text-dark);
-  font-size: 13px;
+  font-size: 12px;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   flex: 0 0 auto;
 }
-.field-box__lost { display: flex; flex-direction: column; align-items: center; }
-.field-box__label { font-size: 17px; color: #9fb0cf; }
-.field-box__value { font-size: 34px; font-weight: bold; line-height: 1.1; }
+/* ロスト数はフィールドカードの上に重ねる（カードを大きく見せるため） */
+.field-box__lost {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(6, 9, 18, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+.field-box--opp .field-box__lost { bottom: auto; top: 5px; }
+.field-box__label { font-size: 17px; color: #b9c8e4; }
+.field-box__value { font-size: 30px; font-weight: bold; line-height: 1; }
 
 /* --- 山札（7 / 15）枚数は常時表示 --- */
 .deck-box {
@@ -346,6 +440,8 @@ body.hide-numbers .ui-box::after { display: none; }
   width: 159px;
   aspect-ratio: 63 / 88;
   background: var(--card-back);
+  background-size: cover;
+  background-position: center;
   border: 2px solid #0d1526;
   border-radius: 8px;
   color: #93a3c4;
@@ -380,6 +476,8 @@ body.hide-numbers .ui-box::after { display: none; }
   width: 60px;
   height: 84px;
   background: var(--card-back);
+  background-size: cover;
+  background-position: center;
   border: 2px solid #0d1526;
   border-radius: 5px;
 }
@@ -394,12 +492,106 @@ body.hide-numbers .ui-box::after { display: none; }
 /* =====================================================================
    自分の拡大手札（扇状・最前面）
    ===================================================================== */
-#hand-backdrop {
+/* =====================================================================
+   クイック詳細（仕様書 16.1）
+   画面左上に重ねて表示。盤面は押し下げない。
+   ===================================================================== */
+#quick-detail {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  width: 452px;
+  z-index: 60;
+  display: none;
+}
+#quick-detail.is-open { display: block; }
+
+.qd {
+  background: rgba(8, 11, 20, 0.94);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.qd__name { font-size: 30px; font-weight: bold; line-height: 1.25; }
+.qd__meta { margin-top: 4px; font-size: 19px; color: #9fb0cf; }
+.qd__stats { display: flex; gap: 18px; margin-top: 8px; align-items: baseline; }
+.qd__stat { font-size: 19px; color: #9fb0cf; }
+.qd__stat b { font-size: 30px; color: var(--text); margin-left: 4px; }
+.qd__stat.is-up b { color: #8ef5a0; }
+.qd__stat.is-down b { color: #ff9a9a; }
+.qd__text {
+  margin-top: 8px;
+  font-size: 18px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: #e6ebf6;
+}
+
+/* =====================================================================
+   拡大詳細（仕様書 16.2）
+   約0.5秒の長押しで開く。背景操作は止め、閉じるボタンでのみ戻る。
+   ===================================================================== */
+#zoom-detail {
   position: absolute;
   inset: 0;
-  z-index: 40;
+  z-index: 120;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+  padding: 40px;
 }
-#hand-backdrop.is-hidden { display: none; }
+#zoom-detail.is-open { display: flex; }
+
+.zd {
+  width: 100%;
+  max-width: 940px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.zd__card {
+  width: 470px;
+  aspect-ratio: 63 / 88;
+  background: var(--card-face);
+  background-size: cover;
+  background-position: center;
+  border-radius: 14px;
+  flex: 0 0 auto;
+}
+.zd__card--landscape { width: 660px; aspect-ratio: 1039 / 744; }
+.zd__info {
+  width: 100%;
+  background: rgba(10, 14, 24, 0.96);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.zd__name { font-size: 38px; font-weight: bold; }
+.zd__meta { margin-top: 6px; font-size: 22px; color: #9fb0cf; }
+.zd__stats { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 12px; }
+.zd__stat { font-size: 22px; color: #9fb0cf; }
+.zd__stat b { font-size: 32px; color: var(--text); margin-left: 6px; }
+.zd__stat.is-up b { color: #8ef5a0; }
+.zd__stat.is-down b { color: #ff9a9a; }
+.zd__text {
+  margin-top: 12px;
+  font-size: 22px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: #e6ebf6;
+}
+.zd__close {
+  padding: 14px 44px;
+  font-size: 26px;
+  font-weight: bold;
+  color: var(--text);
+  background: #26314e;
+  border: 2px solid var(--text-dim, #9fb0cf);
+  border-radius: 10px;
+  cursor: pointer;
+}
 
 #hand-fan {
   position: absolute;
@@ -417,13 +609,14 @@ body.hide-numbers .ui-box::after { display: none; }
   left: calc(50% - 95px);
   bottom: var(--fan-bottom);
   width: 190px;
+  font-size: 190px;
   transform-origin: 50% 100%;   /* カードの下端を軸に少しだけ傾ける */
   transition: transform 0.18s ease, filter 0.18s ease;
   pointer-events: auto;
 }
 .fan-card.is-selected {
-  z-index: 30;
-  filter: drop-shadow(0 0 16px rgba(255, 211, 107, 0.85));
+  /* 重ね順は preview.js が最前面に設定する */
+  filter: drop-shadow(0 0 18px rgba(255, 211, 107, 0.9));
 }
 
 /* =====================================================================

@@ -114,8 +114,11 @@
     <!-- ================= 自分の拡大手札（扇状・最前面） ================= -->
     <div id="hand-fan" class="is-hidden"></div>
 
-    <!-- 拡大手札を閉じるための空白領域 -->
-    <div id="hand-backdrop" class="is-hidden"></div>
+    <!-- クイック詳細（画面左上・盤面を押し下げない重ね表示） -->
+    <div id="quick-detail"></div>
+
+    <!-- 拡大詳細（画面中央・背景操作を止める） -->
+    <div id="zoom-detail"></div>
 
   </div>
 </div>
@@ -165,7 +168,17 @@
     <label>カード間隔 <input type="range" id="v-spacing" min="60" max="220" value="100"><span class="v">100</span></label>
     <label>弧の深さ <input type="range" id="v-arc" min="0" max="200" value="30"><span class="v">30</span></label>
     <label>端の傾き <input type="range" id="v-fan" min="0" max="45" value="20"><span class="v">20</span></label>
-    <label>手札の高さ <input type="range" id="v-bottom" min="0" max="340" value="70"><span class="v">70</span></label>
+    <label>手札の高さ <input type="range" id="v-bottom" min="0" max="340" value="90"><span class="v">90</span></label>
+    <label>選択時の拡大 <input type="range" id="v-fan-scale" min="100" max="140" value="114"><span class="v">1.14</span></label>
+  </div>
+
+  <div class="panel__group">
+    <div class="panel__head">現在値の表示位置（カード画像に重ねる数値）</div>
+    <label>大きさ <input type="range" id="v-ov-size" min="15" max="50" value="30"><span class="v">0.30</span></label>
+    <label>左位置 <input type="range" id="v-ov-left" min="0" max="300" value="0"><span class="v">0.000</span></label>
+    <label>すき間 <input type="range" id="v-ov-gap" min="0" max="40" value="0"><span class="v">0.00</span></label>
+    <label>下位置 <input type="range" id="v-ov-bottom" min="0" max="300" value="0"><span class="v">0.000</span></label>
+    <label>フィールドの大きさ <input type="range" id="v-field-h" min="80" max="200" value="134"><span class="v">134</span></label>
   </div>
 
   <div class="panel__group">
@@ -175,6 +188,8 @@
   </div>
 </div>
 
+<script src="js/cards.js"></script>
+<script src="js/card-images.js"></script>
 <script src="js/preview.js"></script>
 </body>
 </html>
