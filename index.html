@@ -24,6 +24,9 @@
     <!-- ================= 盤面（斜め視点をかける層） ================= -->
     <div id="board-plane">
 
+      <!-- --- コンベア風の追跡矢印（カードより後ろ・盤面背景より前：仕様書 21.2） --- -->
+      <svg id="pursuit-arrows" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
+
       <!-- --- 相手の通常盤面：左＝相手の人間(5) / 右＝相手の怪異(6) --- -->
       <div class="zone zone--opp-normal-human" id="opp-normal-human" data-no="5"></div>
       <div class="zone zone--opp-normal-youkai" id="opp-normal-youkai" data-no="6"></div>
@@ -40,8 +43,6 @@
       <div class="zone zone--self-normal-youkai" id="self-normal-youkai" data-no="16"></div>
       <div class="zone zone--self-normal-human" id="self-normal-human" data-no="17"></div>
 
-      <!-- --- 追跡矢印（Stage F で本実装。ここでは位置確認用の仮表示） --- -->
-      <svg id="pursuit-arrows" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
     </div>
 
     <!-- ================= 相手側の固定UI（画面上端） ================= -->
@@ -114,6 +115,21 @@
     <!-- ================= 自分の拡大手札（扇状・最前面） ================= -->
     <div id="hand-fan" class="is-hidden"></div>
 
+    <!-- 追跡選択中の仮矢印（カードより前に出す：仕様書 21.3） -->
+    <svg id="drag-arrow" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
+
+    <!-- 画面中央の大きな文字（「追跡」「襲撃」：仕様書 20・21.4） -->
+    <div id="banner"><span></span></div>
+
+    <!-- イベント用の一時的なドロップ先（仕様書 18.3。ドラッグ中だけ出る） -->
+    <div id="event-drop" class="is-hidden"></div>
+
+    <!-- ドラッグ中のカードを乗せる層（最前面） -->
+    <div id="drag-layer"></div>
+
+    <!-- 短いお知らせ（ドロップ失敗の理由など） -->
+    <div id="toast"></div>
+
     <!-- クイック詳細（画面左上・盤面を押し下げない重ね表示） -->
     <div id="quick-detail"></div>
 
@@ -148,6 +164,11 @@
   </div>
 
   <div class="panel__group">
+    <div class="panel__head">演出の確認</div>
+    <label><button type="button" id="btn-attack-demo">襲撃の演出を試す</button></label>
+  </div>
+
+  <div class="panel__group">
     <div class="panel__head">手札</div>
     <label>自分の枚数 <input type="range" id="c-hand" min="0" max="10" value="6"><span class="v">6</span></label>
     <label>相手の枚数 <input type="range" id="c-opp-hand" min="0" max="10" value="5"><span class="v">5</span></label>
@@ -179,7 +200,8 @@
     <label>左位置 <input type="range" id="v-ov-left" min="0" max="300" value="0"><span class="v">0.000</span></label>
     <label>すき間 <input type="range" id="v-ov-gap" min="0" max="40" value="0"><span class="v">0.00</span></label>
     <label>下位置 <input type="range" id="v-ov-bottom" min="0" max="300" value="0"><span class="v">0.000</span></label>
-    <label>フィールドの大きさ <input type="range" id="v-field-h" min="80" max="200" value="134"><span class="v">134</span></label>
+    <label>フィールド（自分） <input type="range" id="v-field-h" min="80" max="210" value="200"><span class="v">200</span></label>
+    <label>フィールド（相手） <input type="range" id="v-field-h-opp" min="80" max="210" value="180"><span class="v">180</span></label>
   </div>
 
   <div class="panel__group">

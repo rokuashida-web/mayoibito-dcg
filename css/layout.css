@@ -33,8 +33,10 @@
      並びのバランスは崩れません（全部が同じ量だけ動くため）。 */
   --play-shift: 75px;
 
-  /* ---- フィールドカードの表示の大きさ ---- */
-  --field-h: 134px;
+  /* ---- フィールドカードの表示の大きさ ----
+     相手側は少し小さくして、奥にある感じを出します。 */
+  --field-h: 200px;       /* 自分側 */
+  --field-h-opp: 180px;   /* 相手側 */
 
   /* ---- 現在値オーバーレイ（カード画像の上に重ねる今の数値） ----
      カード画像に印刷されている数字は「基礎値」なので、
@@ -46,8 +48,10 @@
   --ov-gap: 0;           /* 枠と枠のすき間（0で枠どうしが接する） */
 
   /* ---- 追跡矢印（Stage F で本実装） ---- */
-  --pursuit-arrow-speed: 1.8s;
-  --pursuit-arrow-color: #ff5f6d;
+  --pursuit-arrow-speed: 2.2s;         /* 追跡中の流れる速さ */
+  --pursuit-arrow-color: #ff5f6d;      /* 追跡中の色（赤系） */
+  --pursuit-attack-speed: 0.38s;       /* 襲撃時の速さ */
+  --pursuit-attack-color: #ff2f3f;     /* 襲撃時の色（より鮮やかな赤） */
 
   /* ---- 配色 ---- */
   --bg: #05060b;
@@ -87,6 +91,7 @@ html, body {
 #viewport {
   position: fixed;
   inset: 0;
+  touch-action: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -273,6 +278,9 @@ body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
   width: var(--self-normal-w, 175px);
   font-size: var(--self-normal-w, 175px);
 }
+/* カードが0枚でもドロップ先として掴めるよう、高さを確保しておく */
+.zone--self-normal-youkai,
+.zone--self-normal-human { min-height: calc(var(--self-normal-w, 175px) * 1.3968); }
 
 /* 奥のカードを少し小さく見せる（遠近感の補助） */
 .zone--opp-normal-human,
@@ -280,23 +288,61 @@ body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
 .zone--opp-track-human,
 .zone--opp-track-youkai { scale: var(--far-card-scale); }
 
-/* --- 追跡矢印（位置確認用の仮表示） --- */
-#pursuit-arrows {
+/* --- コンベア風の追跡矢印（仕様書 21） ---
+   怪異から人間へ、山形の模様がゆっくり流れ続けます。
+   カードより後ろ・盤面背景より前に置き、操作は妨げません。 */
+#pursuit-arrows,
+#drag-arrow {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
 }
-.arrow-line {
+#drag-arrow { z-index: 145; }   /* 仮矢印はカードより前に出す（仕様書 21.3） */
+
+.conveyor { transform-box: view-box; }
+.conveyor--down { animation: conveyor-down var(--pursuit-arrow-speed) linear infinite; }
+.conveyor--up   { animation: conveyor-up   var(--pursuit-arrow-speed) linear infinite; }
+@keyframes conveyor-down { from { transform: translateY(0); } to { transform: translateY(var(--step, 44px)); } }
+@keyframes conveyor-up   { from { transform: translateY(0); } to { transform: translateY(calc(-1 * var(--step, 44px))); } }
+
+.chevron {
+  fill: none;
   stroke: var(--pursuit-arrow-color);
-  stroke-width: 7;
-  stroke-dasharray: 26 20;
-  opacity: 0.9;
-  animation: arrow-flow var(--pursuit-arrow-speed) linear infinite;
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.5;                 /* 半透明（仕様書 21.2） */
 }
-@keyframes arrow-flow { to { stroke-dashoffset: -92; } }
-.arrow-head { fill: var(--pursuit-arrow-color); }
+
+/* 襲撃時は赤く、速く（仕様書 21.4） */
+#pursuit-arrows.is-attack .chevron {
+  stroke: var(--pursuit-attack-color);
+  opacity: 0.95;
+  stroke-width: 16;
+}
+#pursuit-arrows.is-attack .conveyor--down,
+#pursuit-arrows.is-attack .conveyor--up {
+  animation-duration: var(--pursuit-attack-speed);
+}
+
+/* 追跡選択中の仮矢印（細い線） */
+.temp-arrow {
+  stroke: var(--pursuit-arrow-color);
+  stroke-width: 6;
+  stroke-dasharray: 18 14;
+  opacity: 0.9;
+  fill: none;
+}
+.temp-arrow-head { fill: var(--pursuit-arrow-color); opacity: 0.9; }
+
+/* 追跡の候補に選ばれているカード（仕様書 19.2） */
+.card.is-candidate {
+  outline: 5px solid #ffd36b;
+  outline-offset: 4px;
+  border-radius: 10px;
+}
 
 /* =====================================================================
    固定UI（傾けない）
@@ -365,37 +411,47 @@ body.hide-numbers .ui-box::after { display: none; }
   text-align: center;
   padding: 0 10px;
 }
-.hexbtn--self-trash { left: 200px; top: 1858px; width: 210px; height: 62px; }
-.hexbtn--opp-trash  { left: 670px; top: 0px;    width: 210px; height: 62px; }
-.hexbtn--log  { left: 8px;   top: calc(1025px - var(--play-shift)); width: 95px;  height: 62px; font-size: 20px; }
+.hexbtn--self-trash { left: 202px; top: 1858px; width: 160px; height: 62px; font-size: 19px; }
+.hexbtn--opp-trash  { left: 718px; top: 0px;    width: 160px; height: 62px; font-size: 19px; }
+.hexbtn--log  { left: 8px;   top: calc(1095px - var(--play-shift)); width: 143px; height: 93px; font-size: 30px; }
 .hexbtn--main { left: 898px; top: calc(920px - var(--play-shift));  width: 160px; height: 108px; font-size: 22px; }
 
 /* --- 設定（丸） --- */
 .roundbtn {
   left: 12px;
   top: calc(928px - var(--play-shift));
-  width: 78px;
-  height: 78px;
+  width: 117px;
+  height: 117px;
   border-radius: 50%;
   background: #223257;
   border: 2px solid var(--line);
-  font-size: 20px;
+  font-size: 30px;
 }
 
 /* --- フィールドカード＋ロスト数（2 / 20） --- */
 .field-box {
-  width: 210px;
+  /* 横長カード（1039:744）の比率に合わせて横幅を決める */
+  width: calc(var(--field-h) * 1.3965);
   height: var(--field-h);
   background: #0e1526;
   border: 2px solid var(--line);
   border-radius: 10px;
   padding: 3px;
 }
-.field-box--self { left: 430px; top: calc(1920px - var(--field-h)); }
-.field-box--opp  { left: 440px; top: 0px; }
+/* 画面のちょうど中央に置く。大きさを変えても中央のまま。
+   中央配置なので、自分側と相手側の左位置は同じ値になる（点対称も保たれる）。 */
+.field-box--self { left: calc((1080px - var(--field-h) * 1.3965) / 2); top: calc(1920px - var(--field-h)); }
+/* 相手側は自分側より小さいので、中央の計算もそれ用の値で行う */
+.field-box--opp {
+  width: calc(var(--field-h-opp) * 1.3965);
+  height: var(--field-h-opp);
+  left: calc((1080px - var(--field-h-opp) * 1.3965) / 2);
+  top: 0px;
+}
 .field-box__card {
   width: 100%;
   height: 100%;              /* 枠いっぱいに大きく表示する */
+  cursor: pointer;
   background: var(--card-face);
   background-size: cover;
   background-position: center;
@@ -423,7 +479,6 @@ body.hide-numbers .ui-box::after { display: none; }
   background: rgba(6, 9, 18, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.35);
 }
-.field-box--opp .field-box__lost { bottom: auto; top: 5px; }
 .field-box__label { font-size: 17px; color: #b9c8e4; }
 .field-box__value { font-size: 30px; font-weight: bold; line-height: 1; }
 
@@ -462,7 +517,7 @@ body.hide-numbers .ui-box::after { display: none; }
 
 /* --- 簡略手札（1 / 21）裏向きの重ね＋枚数 --- */
 .hand-mini {
-  width: 385px;
+  width: 350px;
   height: 108px;
   gap: 10px;
   background: rgba(14, 21, 38, 0.9);
@@ -471,12 +526,12 @@ body.hide-numbers .ui-box::after { display: none; }
   padding: 0 12px;
   cursor: pointer;
 }
-.hand-mini--self { left: 665px; top: 1812px; }
+.hand-mini--self { left: 700px; top: 1812px; }
 .hand-mini--opp  { left: 30px;  top: 0px; }
 .hand-mini__stack {
   position: relative;
   flex: 0 0 auto;
-  width: 289px;     /* ここに最大10枚を重ねて並べる */
+  width: 250px;     /* ここに最大10枚を重ねて並べる */
   height: 84px;
 }
 .hand-mini__back {
@@ -502,6 +557,134 @@ body.hide-numbers .ui-box::after { display: none; }
    自分の拡大手札（扇状・最前面）
    ===================================================================== */
 /* =====================================================================
+   ドラッグ＆ドロップ（仕様書 17〜18）
+   ===================================================================== */
+
+/* ドラッグ中のカードを乗せる層 */
+#drag-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 150;
+  pointer-events: none;   /* 下のドロップ先を判定できるようにする */
+}
+
+/* 指に追従するカード本体 */
+.drag-ghost {
+  position: absolute;
+  width: 190px;
+  aspect-ratio: 63 / 88;
+  background-size: cover;
+  background-position: center;
+  border-radius: 8px;
+  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.65));
+  transform: translate(-50%, -50%) scale(1.12);   /* 少し拡大・傾きは0度 */
+}
+.drag-ghost.is-returning {
+  transition: left 0.18s ease, top 0.18s ease;    /* 失敗時に元位置へ戻す */
+}
+
+/* 元位置に残す薄いプレースホルダー */
+.fan-card.is-dragging { opacity: 0.28; }
+
+/* ドラッグ中、置けない場所は軽く暗くする（置ける場所だけが目立つ）
+   ------------------------------------------------------------------
+   注意：カードには影を付けるための filter が別に指定されている。
+   filter は後勝ちではなく「詳しく書いたほうが勝つ」ため、
+   カード向けには影と暗転をまとめて書き直す必要がある。 */
+.is-dimmed {
+  filter: brightness(0.42) saturate(0.7);
+  transition: filter 0.15s ease;
+}
+/* 画像付きカード（影あり）＋暗転 */
+.card.has-image.is-dimmed {
+  filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.55)) brightness(0.42) saturate(0.7);
+}
+/* 選択中の手札（黄色い光）＋暗転 */
+.fan-card.is-selected.is-dimmed {
+  filter: drop-shadow(0 0 18px rgba(255, 211, 107, 0.9)) brightness(0.42) saturate(0.7);
+}
+
+/* 有効なドロップ先の強調 */
+.is-drop-target {
+  outline: 4px dashed rgba(140, 220, 255, 0.85);
+  outline-offset: 6px;
+  border-radius: 10px;
+}
+.is-drop-hover {
+  outline-color: #ffd36b;
+  outline-style: solid;
+  /* background の一括指定は使わない。
+     カードの背景画像の設定（cover など）まで初期化されてしまうため。 */
+  background-color: rgba(255, 211, 107, 0.14);
+}
+
+/* イベント用の一時的なドロップ先 */
+#event-drop {
+  position: absolute;
+  /* 左右は設定・ログ・メイン終了・山札に掛からない範囲、
+     下は自分の通常盤面（y=1280）の手前まで広げてある */
+  left: 180px;
+  top: 740px;
+  width: 710px;
+  height: 520px;
+  z-index: 140;
+  background-color: rgba(120, 190, 255, 0.07);
+  border: 3px dashed rgba(140, 220, 255, 0.5);
+  border-radius: 16px;
+}
+#event-drop.is-hidden { display: none; }
+#event-drop.is-drop-hover {
+  border-color: #ffd36b;
+  border-style: solid;
+  background-color: rgba(255, 211, 107, 0.16);
+}
+
+/* 画面中央の大きな文字（「追跡」「襲撃」：仕様書 20・21.4） */
+#banner {
+  position: absolute;
+  inset: 0;
+  z-index: 146;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+#banner.is-open { display: flex; }
+#banner span {
+  font-size: 190px;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  color: #eaf3ff;
+  text-shadow: 0 0 30px rgba(0, 0, 0, 0.9), 0 8px 20px rgba(0, 0, 0, 0.8);
+  animation: banner-in 0.32s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+#banner.is-attack span { color: var(--pursuit-attack-color); }
+@keyframes banner-in {
+  from { opacity: 0; transform: scale(0.7); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* 短いお知らせ（ドロップ失敗の理由など） */
+#toast {
+  position: absolute;
+  left: 50%;
+  bottom: 470px;
+  transform: translateX(-50%);
+  z-index: 160;
+  padding: 16px 30px;
+  font-size: 32px;
+  color: #fff;
+  background: rgba(12, 16, 28, 0.94);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+#toast.is-open { opacity: 1; }
+
+/* =====================================================================
    クイック詳細（仕様書 16.1）
    画面左上に重ねて表示。盤面は押し下げない。
    ===================================================================== */
@@ -510,7 +693,6 @@ body.hide-numbers .ui-box::after { display: none; }
   left: 18px;
   top: 18px;
   width: 700px;          /* スマホで読めるよう大きめに取る */
-  max-height: 1100px;
   z-index: 60;
   display: none;
 }
@@ -521,6 +703,13 @@ body.hide-numbers .ui-box::after { display: none; }
   border: 2px solid var(--line);
   border-radius: 14px;
   padding: 18px 20px;
+  /* 効果文が長いカードでも自分の盤面へ届かないよう、高さに上限を設ける。
+     上限に達したら、この枠の中だけを送って読む。
+     （上限515px＝相手の山札の枚数表示に掛からない高さ） */
+  max-height: 515px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;    /* 画面はスクロールしないが、この枠だけは送れる */
 }
 .qd__name { font-size: 52px; font-weight: bold; line-height: 1.2; }
 .qd__meta { margin-top: 8px; font-size: 30px; color: #9fb0cf; }
@@ -565,11 +754,14 @@ body.hide-numbers .ui-box::after { display: none; }
 .zd__card {
   width: 640px;
   aspect-ratio: 63 / 88;
-  background: var(--card-face);
-  background-size: cover;
+  /* カード画像は角が透明なので、下地の色を敷かない（白いふちが出るため） */
+  background-color: transparent;
+  background-size: contain;
   background-position: center;
-  border-radius: 14px;
-  flex: 0 0 auto;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.6));
+  flex: 0 1 auto;
+  min-height: 0;
 }
 .zd__card--landscape { width: 880px; aspect-ratio: 1039 / 744; }
 .zd__info {
@@ -580,6 +772,8 @@ body.hide-numbers .ui-box::after { display: none; }
   padding: 20px 24px;
   /* 効果文が長いカードでも収まるように、この枠の中だけで送る */
   overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   flex: 0 1 auto;
 }
 .zd__name { font-size: 54px; font-weight: bold; }
