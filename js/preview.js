@@ -192,10 +192,12 @@ function attachCardInput(el, spec, place) {
         view.handSelected = (view.handSelected === idx) ? -1 : idx;
         syncPanel();
         renderFan();
-        if (view.handSelected === idx) openQuickDetail(spec);
+        if (view.handSelected === idx) openQuickDetail(spec, el);
         else closeQuickDetail();
       } else {
-        openQuickDetail(spec);
+        // 盤面のカードも、同じカードをもう一度押したら閉じる
+        if (quickDetailEl === el) closeQuickDetail();
+        else openQuickDetail(spec, el);
       }
     },
     onLongPress: function () {
@@ -428,10 +430,14 @@ function statEl(className, label, value, base) {
    クイック詳細（仕様書 16.1）
    ===================================================================== */
 
-function openQuickDetail(spec) {
+/** いまクイック詳細を出しているカード（再タップで閉じる判定に使う） */
+let quickDetailEl = null;
+
+function openQuickDetail(spec, el) {
   const master = CARD_MASTER[spec.cardId];
   const box = document.getElementById('quick-detail');
   if (!master) { closeQuickDetail(); return; }
+  quickDetailEl = el || null;
 
   box.innerHTML = '';
   const qd = document.createElement('div');
@@ -477,6 +483,7 @@ function closeQuickDetail() {
   const box = document.getElementById('quick-detail');
   box.classList.remove('is-open');
   box.innerHTML = '';
+  quickDetailEl = null;
 }
 
 /* =====================================================================
@@ -701,6 +708,10 @@ function setupPanel() {
   bindRange('v-ov-bottom', function (v) {
     root.style.setProperty('--ov-bottom', (v / 1000).toFixed(3));
   }, function (v) { return (v / 1000).toFixed(3); });
+  bindRange('v-fan-lift', function (v) {
+    root.style.setProperty('--fan-lift', v + 'px');
+    renderFan();
+  });
   bindRange('v-fan-scale', function (v) {
     root.style.setProperty('--fan-selected-scale', (v / 100).toFixed(2));
     renderFan();
