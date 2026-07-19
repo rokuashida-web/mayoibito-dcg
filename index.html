@@ -1,183 +1,180 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>マヨイビト（最小試作版）</title>
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>マヨイビト v0.2 ｜ Stage A 静的レイアウト</title>
+<link rel="stylesheet" href="css/layout.css">
 </head>
 <body>
-  <div id="app">
 
-    <!-- 横向き警告（スマホで横向きのときだけ表示） -->
-    <div id="orientation-warning">
-      <p>端末を縦向きにしてください</p>
+<!-- =====================================================================
+     Stage A：静的レイアウト確認用の画面
+     ---------------------------------------------------------------------
+     ・ゲームのルール処理には、まだ一切つないでいません
+     ・カードはすべて仮の枠（番号つき）です
+     ・下の「調整パネル」で枚数や見え方を変えて確認できます
+     ・座標は 1080×1920 の設計座標をそのまま使い、
+       画面サイズに合わせて全体を等倍で縮小しています
+     ===================================================================== -->
+
+<div id="viewport">
+  <div id="stage">
+
+    <!-- ================= 盤面（斜め視点をかける層） ================= -->
+    <div id="board-plane">
+
+      <!-- --- 相手の通常盤面：左＝相手の人間(5) / 右＝相手の怪異(6) --- -->
+      <div class="zone zone--opp-normal-human" id="opp-normal-human" data-no="5"></div>
+      <div class="zone zone--opp-normal-youkai" id="opp-normal-youkai" data-no="6"></div>
+
+      <!-- --- 相手の追跡カード：左＝追跡されている人間(8) / 右＝追跡している怪異(9) --- -->
+      <div class="zone zone--opp-track-human" id="opp-track-human" data-no="8"></div>
+      <div class="zone zone--opp-track-youkai" id="opp-track-youkai" data-no="9"></div>
+
+      <!-- --- 自分の追跡カード：左＝追跡している怪異(12) / 右＝追跡されている人間(13) --- -->
+      <div class="zone zone--self-track-youkai" id="self-track-youkai" data-no="12"></div>
+      <div class="zone zone--self-track-human" id="self-track-human" data-no="13"></div>
+
+      <!-- --- 自分の通常盤面：左＝自分の怪異(16) / 右＝自分の人間(17) --- -->
+      <div class="zone zone--self-normal-youkai" id="self-normal-youkai" data-no="16"></div>
+      <div class="zone zone--self-normal-human" id="self-normal-human" data-no="17"></div>
+
+      <!-- --- 追跡矢印（Stage F で本実装。ここでは位置確認用の仮表示） --- -->
+      <svg id="pursuit-arrows" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
     </div>
 
-    <!-- ============ 開始画面（先攻選択・シード入力） ============ -->
-    <div id="start-screen">
-      <div class="start__box">
-        <div class="start__title">マヨイビト</div>
-        <div class="start__subtitle">最小試作版</div>
+    <!-- ================= 相手側の固定UI（画面上端） ================= -->
+    <div class="band band--top"></div>
 
-        <div class="start__section">
-          <div class="start__label">先攻を選ぶ</div>
-          <div class="start__choices">
-            <button type="button" class="choice" data-side="village">ヨマモリ村</button>
-            <button type="button" class="choice" data-side="mansion">黒薔薇の館</button>
-          </div>
-        </div>
-
-        <div class="start__section">
-          <div class="start__label">シード（空欄なら自動で決まります）</div>
-          <input id="seed-input" type="text" inputmode="text"
-                 placeholder="例：MAYO-1A2B-3C4D" autocomplete="off">
-          <div class="start__hint">同じシード＋同じ操作なら、毎回同じ試合になります。</div>
-        </div>
-
-        <button id="start-btn" type="button">対戦開始</button>
-      </div>
+    <!-- 1 相手の簡略手札（裏向きの重ね＋枚数） -->
+    <div class="ui-box hand-mini hand-mini--opp" id="opp-hand-mini" data-no="1">
+      <div class="hand-mini__stack"></div>
+      <div class="hand-mini__count">0</div>
     </div>
 
-    <!-- ============ ゲーム枠（開始まで hidden） ============ -->
-    <div id="game-frame" hidden>
-
-      <!-- 上部バー（シード表示・ログボタン） -->
-      <div id="top-bar">
-        <span class="top-bar__texts">
-          <!-- 例：ターン5｜村 第3ターン｜メイン（仕様書 9.1） -->
-          <span id="turn-display"></span>
-          <span id="seed-display"></span>
-        </span>
-        <span class="top-bar__btns">
-          <button id="log-btn" type="button">ログ</button>
-          <button id="quit-btn" type="button">中断</button>
-        </span>
-      </div>
-
-      <!-- ============ 盤面 ============ -->
-      <div id="board">
-
-        <!-- 上側：待機中（洋館） -->
-        <div class="side side--opponent">
-          <div class="side__bar">
-            <span class="side__header" id="opp-header">黒薔薇の館｜待機中</span>
-            <span class="side__status" id="opp-status"></span>
-          </div>
-
-          <!-- 後列（追跡なし 人間最大3／怪異最大3）※上側は左右を反転して鏡合わせにする
-               左レーン＝自分の怪異と相手の人間／右レーン＝自分の人間と相手の怪異 -->
-          <div class="lane lane--back">
-            <div class="back-group back-group--human" id="opp-back-human"></div>
-            <div class="back-group back-group--youkai" id="opp-back-youkai"></div>
-          </div>
-
-          <!-- 前列（左：追跡人間／中央：フィールド固定／右：追跡怪異）※中央側を向く
-               下側と鏡合わせにすることで、襲撃する怪異と狙われる人間が縦に並ぶ -->
-          <div class="lane lane--front">
-            <div class="front-slot front-slot--human" id="opp-track-human"></div>
-            <div class="front-slot front-slot--field" id="opp-field"></div>
-            <div class="front-slot front-slot--youkai" id="opp-track-youkai"></div>
-          </div>
-        </div>
-
-        <!-- 中央：追跡・襲撃の戦場スペース（Stage1〜2は区切り線のみ） -->
-        <div class="center-track"></div>
-
-        <!-- 下側：操作中（村） -->
-        <div class="side side--self">
-          <!-- 前列（村は前列が上＝中央側） -->
-          <div class="lane lane--front">
-            <div class="front-slot front-slot--youkai" id="self-track-youkai"></div>
-            <div class="front-slot front-slot--field" id="self-field"></div>
-            <div class="front-slot front-slot--human" id="self-track-human"></div>
-          </div>
-
-          <!-- 後列（村は後列が下） -->
-          <div class="lane lane--back">
-            <div class="back-group back-group--youkai" id="self-back-youkai"></div>
-            <div class="back-group back-group--human" id="self-back-human"></div>
-          </div>
-        </div>
-
-        <!-- クイック詳細（左上・重ね表示） -->
-        <div id="quick-detail"></div>
-      </div>
-
-      <!-- 操作中ヘッダー＋ステータス（独立領域・手札とは重ねない） -->
-      <div id="self-header" class="op-header">
-        <span class="op-header__label" id="self-header-label"></span>
-        <span class="op-header__status" id="self-status"></span>
-      </div>
-
-      <!-- 手札（下端・横スクロールのみ） -->
-      <div id="hand-wrap">
-        <!-- マリガン中だけ表示される確定バー -->
-        <div id="mulligan-bar" hidden>
-          <span id="mulligan-hint">交換するカードを選んでください（0〜5枚）</span>
-          <button id="mulligan-confirm" type="button">マリガンを確定</button>
-        </div>
-        <!-- メイン中／ターン終了時の操作バー（仕様書 9.6・10.4） -->
-        <div id="action-bar" hidden>
-          <span id="action-hint"></span>
-          <button id="action-btn" type="button">メイン終了</button>
-        </div>
-        <!-- 追跡選択中に出るバー（仕様書 10.1） -->
-        <div id="track-bar" hidden>
-          <span id="track-hint"></span>
-          <span class="track-bar__btns">
-            <button id="track-confirm" type="button">追跡を確定</button>
-            <button id="track-skip" type="button">追跡せず終了</button>
-            <button id="track-back" type="button">メインに戻る</button>
-          </span>
-        </div>
-
-        <!-- グッズの対象選択中に出るバー（仕様書 11.2） -->
-        <div id="target-bar" hidden>
-          <span id="target-hint"></span>
-          <button id="target-cancel" type="button">キャンセル</button>
-        </div>
-        <div id="hand-label">手札</div>
-        <div id="hand"></div>
-      </div>
-
-      <!-- 重ね表示：拡大詳細・案内・確認ダイアログ・ログ（スマホ枠全体を覆う） -->
-      <div id="expanded-detail"></div>
-      <div id="guide-overlay"></div>
-      <div id="modal"></div>
-      <div id="log-panel"></div>
-      <div id="zone-viewer"></div>
-
-      <!-- 襲撃などの見出しを一時的に出す表示（仕様書 24） -->
-      <div id="banner"></div>
-
-      <!-- カード選択画面（仕様書 18.6・18.7） -->
-      <div id="picker"></div>
-
-      <!-- リザルト画面（仕様書 22） -->
-      <div id="result"></div>
-
-      <!-- 使用できない理由などを数秒だけ出す表示（仕様書 5・11.4） -->
-      <div id="toast"></div>
-
+    <!-- 2 相手のフィールドカード＋相手のロスト数 -->
+    <div class="ui-box field-box field-box--opp" data-no="2">
+      <div class="field-box__card"><span>フィールド</span></div>
+      <div class="field-box__lost"><span class="field-box__label">ロスト</span><span class="field-box__value">2 / 4</span></div>
     </div>
+
+    <!-- 3 相手のトラッシュ -->
+    <div class="ui-box hexbtn hexbtn--opp-trash" data-no="3"><span>トラッシュ 5</span></div>
+
+    <!-- 4 相手の気力数 -->
+    <div class="ui-box energy-box energy-box--opp" data-no="4">
+      <span class="energy-box__label">気力</span><span class="energy-box__value">4</span>
+    </div>
+
+    <!-- 7 相手の山札（枚数は常時表示） -->
+    <div class="ui-box deck-box deck-box--opp" data-no="7">
+      <div class="deck-box__count">残り 27枚</div>
+      <div class="deck-box__card"><span>山札</span></div>
+    </div>
+
+    <!-- ================= 自分側の固定UI（画面下端） ================= -->
+    <div class="band band--bottom"></div>
+
+    <!-- 10 設定（リタイアなど） -->
+    <div class="ui-box roundbtn" id="btn-settings" data-no="10"><span>設定</span></div>
+
+    <!-- 11 ログ（経過表示もこの先） -->
+    <div class="ui-box hexbtn hexbtn--log" id="btn-log" data-no="11"><span>ログ</span></div>
+
+    <!-- 14 メイン終了／対象確定 -->
+    <div class="ui-box hexbtn hexbtn--main" id="btn-main" data-no="14"><span>メイン終了</span></div>
+
+    <!-- 15 自分の山札（枚数は常時表示） -->
+    <div class="ui-box deck-box deck-box--self" data-no="15">
+      <div class="deck-box__count">残り 31枚</div>
+      <div class="deck-box__card"><span>山札</span></div>
+    </div>
+
+    <!-- 18 自分の気力数 -->
+    <div class="ui-box energy-box energy-box--self" data-no="18">
+      <span class="energy-box__label">気力</span><span class="energy-box__value">6</span>
+    </div>
+
+    <!-- 19 自分のトラッシュ -->
+    <div class="ui-box hexbtn hexbtn--self-trash" data-no="19"><span>トラッシュ 8</span></div>
+
+    <!-- 20 自分のフィールドカード＋自分のロスト数 -->
+    <div class="ui-box field-box field-box--self" data-no="20">
+      <div class="field-box__card"><span>フィールド</span></div>
+      <div class="field-box__lost"><span class="field-box__label">ロスト</span><span class="field-box__value">4 / 5</span></div>
+    </div>
+
+    <!-- 21 自分の簡略手札（タップで拡大手札へ） -->
+    <div class="ui-box hand-mini hand-mini--self" id="self-hand-mini" data-no="21">
+      <div class="hand-mini__stack"></div>
+      <div class="hand-mini__count">0</div>
+    </div>
+
+    <!-- ================= 自分の拡大手札（扇状・最前面） ================= -->
+    <div id="hand-fan" class="is-hidden"></div>
+
+    <!-- 拡大手札を閉じるための空白領域 -->
+    <div id="hand-backdrop" class="is-hidden"></div>
+
+  </div>
+</div>
+
+<!-- 横向き警告 -->
+<div id="orientation-warning">端末を縦向きにしてください</div>
+
+<!-- =====================================================================
+     調整パネル（Stage A 専用。本実装では削除します）
+     ===================================================================== -->
+<button id="panel-toggle" type="button">調整</button>
+<div id="panel" class="is-closed">
+  <div class="panel__title">Stage A 調整パネル<span class="panel__note">（確認用・本番では消します）</span></div>
+
+  <div class="panel__group">
+    <div class="panel__head">盤面の枚数</div>
+    <label>自分の怪異 <input type="range" id="c-self-youkai" min="0" max="3" value="2"><span class="v">2</span></label>
+    <label>自分の人間 <input type="range" id="c-self-human" min="0" max="3" value="2"><span class="v">2</span></label>
+    <label>相手の怪異 <input type="range" id="c-opp-youkai" min="0" max="3" value="2"><span class="v">2</span></label>
+    <label>相手の人間 <input type="range" id="c-opp-human" min="0" max="3" value="2"><span class="v">2</span></label>
   </div>
 
-  <!--
-    スクリプトの読み込み順:
-      1. cards.js   … カードマスターデータ
-      2. decks.js   … 固定デッキ構成
-      3. random.js  … シード付き乱数
-      4. effects.js … カードごとの効果（常在効果など）
-      5. game.js    … ゲームのルール処理（状態・ターン・登場・襲撃・勝敗）
-      6. ui.js      … 画面描画・入力・進行
-  -->
-  <script src="js/cards.js"></script>
-  <script src="js/decks.js"></script>
-  <script src="js/random.js"></script>
-  <script src="js/effects.js"></script>
-  <script src="js/game.js"></script>
-  <script src="js/ui.js"></script>
+  <div class="panel__group">
+    <div class="panel__head">追跡</div>
+    <label><input type="checkbox" id="t-self" checked> 自分の怪異 → 相手の人間</label>
+    <label><input type="checkbox" id="t-opp" checked> 相手の怪異 → 自分の人間</label>
+  </div>
+
+  <div class="panel__group">
+    <div class="panel__head">手札</div>
+    <label>自分の枚数 <input type="range" id="c-hand" min="0" max="10" value="6"><span class="v">6</span></label>
+    <label>相手の枚数 <input type="range" id="c-opp-hand" min="0" max="10" value="5"><span class="v">5</span></label>
+    <label><input type="checkbox" id="hand-expanded"> 拡大表示にする</label>
+    <label>選択中 <input type="range" id="hand-selected" min="-1" max="9" value="-1"><span class="v">なし</span></label>
+  </div>
+
+  <div class="panel__group">
+    <div class="panel__head">見え方（仮の値）</div>
+    <label>遠近 perspective <input type="range" id="v-perspective" min="500" max="2400" step="50" value="850"><span class="v">850</span></label>
+    <label>盤面の傾き <input type="range" id="v-tilt" min="0" max="12" step="0.5" value="7"><span class="v">7</span></label>
+    <label>奥のカード縮小 <input type="range" id="v-far" min="70" max="100" value="90"><span class="v">0.90</span></label>
+    <label>場の高さ <input type="range" id="v-shift" min="0" max="200" value="75"><span class="v">75</span></label>
+  </div>
+
+  <div class="panel__group">
+    <div class="panel__head">手札の扇（3つは独立して効きます）</div>
+    <label>カード間隔 <input type="range" id="v-spacing" min="60" max="220" value="100"><span class="v">100</span></label>
+    <label>弧の深さ <input type="range" id="v-arc" min="0" max="200" value="30"><span class="v">30</span></label>
+    <label>端の傾き <input type="range" id="v-fan" min="0" max="45" value="20"><span class="v">20</span></label>
+    <label>手札の高さ <input type="range" id="v-bottom" min="0" max="340" value="70"><span class="v">70</span></label>
+  </div>
+
+  <div class="panel__group">
+    <div class="panel__head">表示</div>
+    <label><input type="checkbox" id="show-numbers" checked> 番号を表示</label>
+    <label><input type="checkbox" id="show-guides"> 領域の枠を表示</label>
+  </div>
+</div>
+
+<script src="js/preview.js"></script>
 </body>
 </html>

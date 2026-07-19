@@ -1,0 +1,484 @@
+/* =====================================================================
+   マヨイビト v0.2 ―  Stage A：静的レイアウト
+   ---------------------------------------------------------------------
+   考え方：
+     ・1080×1920 の「設計座標」で位置を書く（ラフ画像と同じ座標）
+     ・画面の大きさに合わせて、全体を等倍で縮小する（縦横比は9:16固定）
+     ・そのため、どの端末でもスクロールは発生しない
+
+   調整したい数値は、すべて下の :root にまとめてあります。
+   ===================================================================== */
+
+:root {
+  /* ---- 遠近感（仮の値。実画面を見ながら調整します） ---- */
+  --board-perspective: 850px;   /* 遠近の強さ。小さいほど強い */
+  --board-tilt: 7deg;           /* 盤面の傾き */
+  --far-card-scale: 0.90;       /* 奥（相手側）のカードの縮小率 */
+
+  /* ---- 手札の扇 ----
+     3つを別々に調整できるようにしています。
+       spacing … カード同士の横の間隔（広いほど見やすい）
+       arc     … 弧の深さ。中央のカードが持ち上がる量
+       spread  … 端のカードの傾き（合計角度）*/
+  --fan-spacing: 100px;
+  --fan-arc: 30px;
+  --fan-spread: 20deg;
+  --fan-lift: 70px;             /* 選択したカードのせり出し量 */
+  --fan-bottom: 70px;           /* 画面下端からの距離（大きいほど上へ） */
+
+  /* ---- 場（盤面・山札・各ボタン）をまとめて上下させる量 ----
+     上端UIとのすき間が空きすぎる分を詰めるために使います。
+     値を大きくするほど、場の要素が一体のまま上へ動きます。
+     並びのバランスは崩れません（全部が同じ量だけ動くため）。 */
+  --play-shift: 75px;
+
+  /* ---- 追跡矢印（Stage F で本実装） ---- */
+  --pursuit-arrow-speed: 1.8s;
+  --pursuit-arrow-color: #ff5f6d;
+
+  /* ---- 配色 ---- */
+  --bg: #05060b;
+  --band: #16203c;
+  --line: #2f3a55;
+  --card-face: #f7f7f4;
+  --card-line: #1b1b22;
+  --card-back: #24304e;
+  --text: #f2f2f5;
+  --text-dark: #14141c;
+  --accent: #ffd36b;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #000;
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  overflow: hidden;             /* 画面スクロールは行わない（仕様書 4.2） */
+}
+
+/* =====================================================================
+   画面枠：9:16 を保ったまま中央へ収める
+   ===================================================================== */
+#viewport {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  /* ノッチ・ホームバーを避ける */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+           env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+#stage {
+  position: relative;
+  width: 1080px;
+  height: 1920px;
+  flex: 0 0 auto;
+  background: var(--bg);
+  overflow: hidden;
+  /* JS が --fit（縮小率）を設定します */
+  transform: scale(var(--fit, 0.3));
+  transform-origin: center center;
+}
+
+/* =====================================================================
+   盤面の層（ここにだけ斜め視点をかける）
+   固定UIと手札は傾けない＝文字が読みやすい（仕様書 5.3）
+   ===================================================================== */
+#board-plane {
+  position: absolute;
+  inset: 0;
+  perspective: var(--board-perspective);
+  perspective-origin: 50% 50%;
+}
+#board-plane > .zone {
+  transform: rotateX(var(--board-tilt));
+  transform-style: preserve-3d;
+}
+
+/* =====================================================================
+   カードの見た目（すべて 63:88 に統一）
+   ===================================================================== */
+.card {
+  position: relative;
+  aspect-ratio: 63 / 88;
+  background: var(--card-face);
+  border: 2px solid var(--card-line);
+  border-radius: 8px;
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 20px;
+  line-height: 1.3;
+  flex: 0 0 auto;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+.card--back {
+  background: var(--card-back);
+  border-color: #0d1526;
+  color: #93a3c4;
+}
+.card__no {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 6px;
+  border-radius: 17px;
+  background: #101018;
+  color: #fff;
+  font-size: 19px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+body.hide-numbers .card__no { display: none; }
+
+/* =====================================================================
+   盤面のゾーン
+   ---------------------------------------------------------------------
+   左半分＝自分の怪異と相手の人間／右半分＝自分の人間と相手の怪異
+   （追跡ペアが中央をはさんで縦に向かい合う）
+   ===================================================================== */
+.zone {
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+}
+body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
+
+/* --- 相手の通常盤面（奥・小さめ） --- */
+.zone--opp-normal-human  { left: 101px; top: calc(250px - var(--play-shift)); width: 398px; }
+.zone--opp-normal-youkai { left: 581px; top: calc(250px - var(--play-shift)); width: 398px; }
+.zone--opp-normal-human .card,
+.zone--opp-normal-youkai .card { width: var(--opp-normal-w, 148px); }
+
+/* --- 相手の追跡カード（左：追跡されている人間／右：追跡している怪異） --- */
+.zone--opp-track-human  { left: 289px; top: calc(500px - var(--play-shift)); width: 215px; }
+.zone--opp-track-youkai { left: 583px; top: calc(500px - var(--play-shift)); width: 215px; }
+.zone--opp-track-human .card,
+.zone--opp-track-youkai .card { width: 215px; }
+
+/* --- 自分の追跡カード（左：追跡している怪異／右：追跡されている人間） --- */
+.zone--self-track-youkai { left: 285px; top: calc(925px - var(--play-shift)); width: 225px; }
+.zone--self-track-human  { left: 578px; top: calc(925px - var(--play-shift)); width: 225px; }
+.zone--self-track-youkai .card,
+.zone--self-track-human .card { width: 225px; }
+
+/* --- 自分の通常盤面（手前・大きめ） --- */
+.zone--self-normal-youkai { left: 66px;  top: calc(1355px - var(--play-shift)); width: 468px; }
+.zone--self-normal-human  { left: 546px; top: calc(1355px - var(--play-shift)); width: 468px; }
+.zone--self-normal-youkai .card,
+.zone--self-normal-human .card { width: var(--self-normal-w, 175px); }
+
+/* 奥のカードを少し小さく見せる（遠近感の補助） */
+.zone--opp-normal-human,
+.zone--opp-normal-youkai,
+.zone--opp-track-human,
+.zone--opp-track-youkai { scale: var(--far-card-scale); }
+
+/* --- 追跡矢印（位置確認用の仮表示） --- */
+#pursuit-arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.arrow-line {
+  stroke: var(--pursuit-arrow-color);
+  stroke-width: 7;
+  stroke-dasharray: 26 20;
+  opacity: 0.9;
+  animation: arrow-flow var(--pursuit-arrow-speed) linear infinite;
+}
+@keyframes arrow-flow { to { stroke-dashoffset: -92; } }
+.arrow-head { fill: var(--pursuit-arrow-color); }
+
+/* =====================================================================
+   固定UI（傾けない）
+   ===================================================================== */
+.band {
+  position: absolute;
+  left: 0;
+  width: 1080px;
+  height: 88px;
+  background: var(--band);
+}
+.band--top { top: 0; }
+.band--bottom { bottom: 0; }
+
+.ui-box {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-size: 22px;
+}
+body.show-guides .ui-box { outline: 1px dashed rgba(122, 209, 255, 0.5); }
+
+/* 番号バッジ（Stage A の確認用） */
+.ui-box::after {
+  content: attr(data-no);
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #201f30;
+  font-size: 19px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+body.hide-numbers .ui-box::after { display: none; }
+
+/* --- 気力（4 / 18） --- */
+.energy-box {
+  width: 160px;
+  height: 108px;
+  flex-direction: column;
+  gap: 2px;
+  background: #0e1526;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+}
+.energy-box__label { font-size: 20px; color: #9fb0cf; }
+.energy-box__value { font-size: 44px; font-weight: bold; line-height: 1; }
+.energy-box--self { left: 5px;   top: 1812px; }
+.energy-box--opp  { left: 915px; top: 0px; }
+
+/* --- トラッシュ・ログ・メイン終了（六角形） --- */
+.hexbtn {
+  background: #223257;
+  border: 2px solid var(--line);
+  clip-path: polygon(12% 0, 88% 0, 100% 50%, 88% 100%, 12% 100%, 0 50%);
+  font-size: 21px;
+  text-align: center;
+  padding: 0 10px;
+}
+.hexbtn--self-trash { left: 200px; top: 1858px; width: 210px; height: 62px; }
+.hexbtn--opp-trash  { left: 670px; top: 0px;    width: 210px; height: 62px; }
+.hexbtn--log  { left: 8px;   top: calc(1025px - var(--play-shift)); width: 95px;  height: 62px; font-size: 20px; }
+.hexbtn--main { left: 898px; top: calc(920px - var(--play-shift));  width: 160px; height: 108px; font-size: 22px; }
+
+/* --- 設定（丸） --- */
+.roundbtn {
+  left: 12px;
+  top: calc(928px - var(--play-shift));
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: #223257;
+  border: 2px solid var(--line);
+  font-size: 20px;
+}
+
+/* --- フィールドカード＋ロスト数（2 / 20） --- */
+.field-box {
+  width: 195px;
+  height: 108px;
+  gap: 8px;
+  background: #0e1526;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 6px;
+}
+.field-box--self { left: 445px; top: 1812px; }
+.field-box--opp  { left: 440px; top: 0px; }
+.field-box__card {
+  width: 62px;
+  aspect-ratio: 63 / 88;
+  background: var(--card-face);
+  border: 2px solid var(--card-line);
+  border-radius: 5px;
+  color: var(--text-dark);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex: 0 0 auto;
+}
+.field-box__lost { display: flex; flex-direction: column; align-items: center; }
+.field-box__label { font-size: 17px; color: #9fb0cf; }
+.field-box__value { font-size: 34px; font-weight: bold; line-height: 1.1; }
+
+/* --- 山札（7 / 15）枚数は常時表示 --- */
+.deck-box {
+  width: 175px;
+  height: 260px;      /* 枚数(34) + 余白(4) + カード(222) */
+  flex-direction: column;
+  gap: 4px;
+}
+.deck-box--self { left: 893px; top: calc(1040px - var(--play-shift)); }
+.deck-box--opp  { left: 12px;  top: calc(620px - var(--play-shift)); }
+.deck-box__count {
+  font-size: 21px;
+  color: #cfe0ff;
+  background: rgba(10, 16, 30, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.deck-box__card {
+  width: 159px;
+  aspect-ratio: 63 / 88;
+  background: var(--card-back);
+  border: 2px solid #0d1526;
+  border-radius: 8px;
+  color: #93a3c4;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- 簡略手札（1 / 21）裏向きの重ね＋枚数 --- */
+.hand-mini {
+  width: 385px;
+  height: 108px;
+  gap: 10px;
+  background: rgba(14, 21, 38, 0.9);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.hand-mini--self { left: 665px; top: 1812px; }
+.hand-mini--opp  { left: 30px;  top: 0px; }
+.hand-mini__stack {
+  position: relative;
+  flex: 0 0 auto;
+  width: 289px;     /* ここに最大10枚を重ねて並べる */
+  height: 84px;
+}
+.hand-mini__back {
+  position: absolute;
+  top: 0;
+  width: 60px;
+  height: 84px;
+  background: var(--card-back);
+  border: 2px solid #0d1526;
+  border-radius: 5px;
+}
+.hand-mini__count {
+  font-size: 40px;
+  font-weight: bold;
+  min-width: 62px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+/* =====================================================================
+   自分の拡大手札（扇状・最前面）
+   ===================================================================== */
+#hand-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+}
+#hand-backdrop.is-hidden { display: none; }
+
+#hand-fan {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1080px;
+  height: 700px;
+  z-index: 50;
+  pointer-events: none;
+}
+#hand-fan.is-hidden { display: none; }
+
+.fan-card {
+  position: absolute;
+  left: calc(50% - 95px);
+  bottom: var(--fan-bottom);
+  width: 190px;
+  transform-origin: 50% 100%;   /* カードの下端を軸に少しだけ傾ける */
+  transition: transform 0.18s ease, filter 0.18s ease;
+  pointer-events: auto;
+}
+.fan-card.is-selected {
+  z-index: 30;
+  filter: drop-shadow(0 0 16px rgba(255, 211, 107, 0.85));
+}
+
+/* =====================================================================
+   横向き警告
+   ===================================================================== */
+#orientation-warning {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: #05060b;
+  color: var(--text);
+  font-size: 20px;
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  #orientation-warning { display: flex; }
+}
+
+/* =====================================================================
+   調整パネル（Stage A 専用。本実装では削除します）
+   ===================================================================== */
+#panel-toggle {
+  position: fixed;
+  right: 8px;
+  top: 8px;
+  z-index: 300;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #fff;
+  background: rgba(20, 24, 40, 0.9);
+  border: 1px solid #4a587a;
+  border-radius: 8px;
+}
+#panel {
+  position: fixed;
+  right: 8px;
+  top: 48px;
+  z-index: 300;
+  width: 268px;
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: rgba(12, 16, 28, 0.95);
+  border: 1px solid #4a587a;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #e8ecf6;
+}
+#panel.is-closed { display: none; }
+.panel__title { font-weight: bold; margin-bottom: 6px; }
+.panel__note { font-weight: normal; color: #8fa0c0; font-size: 11px; }
+.panel__group { margin-top: 10px; border-top: 1px solid #2b3552; padding-top: 8px; }
+.panel__head { color: #9fb0cf; margin-bottom: 4px; }
+#panel label { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+#panel input[type="range"] { flex: 1 1 auto; }
+#panel .v { min-width: 38px; text-align: right; color: var(--accent); }
