@@ -118,6 +118,9 @@
     <!-- 追跡選択中の仮矢印（カードより前に出す：仕様書 21.3） -->
     <svg id="drag-arrow" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
 
+    <!-- ターン交代のときに画面を暗くする幕 -->
+    <div id="dim-screen"></div>
+
     <!-- ログ・トラッシュ・設定で使い回す画面 -->
     <div id="sheet">
       <div class="sheet">
@@ -234,7 +237,7 @@
 
   <div class="panel__group">
     <div class="panel__head">手札の扇（3つは独立して効きます）</div>
-    <label>カード間隔 <input type="range" id="v-spacing" min="60" max="220" value="100"><span class="v">100</span></label>
+    <label>カード間隔 <input type="range" id="v-spacing" min="60" max="260" value="120"><span class="v">120</span></label>
     <label>弧の深さ <input type="range" id="v-arc" min="0" max="200" value="30"><span class="v">30</span></label>
     <label>端の傾き <input type="range" id="v-fan" min="0" max="45" value="20"><span class="v">20</span></label>
     <label>手札の高さ <input type="range" id="v-bottom" min="0" max="340" value="90"><span class="v">90</span></label>

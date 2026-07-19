@@ -15,8 +15,8 @@ const STAGE_W = 1080;
 const STAGE_H = 1920;
 
 /* 盤面の枚数に応じたカード幅（仕様書 9.3） */
-const SELF_CARD_W = { 1: 190, 2: 175, 3: 146 };
-const OPP_CARD_W  = { 1: 165, 2: 148, 3: 123 };
+const SELF_CARD_W = { 1: 205, 2: 189, 3: 158 };
+const OPP_CARD_W  = { 1: 178, 2: 160, 3: 133 };
 
 /* 確認用の見本カード。Stage H で本物のゲーム状態に置き換わります。
    speed/hp は「今の値」、base は画像に印刷されている基礎値です。 */
@@ -683,8 +683,8 @@ function renderFan() {
   const wantSpacing = parseFloat(css.getPropertyValue('--fan-spacing')) || 150;
 
   // 画面からはみ出さない範囲で、できるだけ広い間隔にする
-  const CARD_W = 190;
-  const USABLE_W = 1020;
+  const CARD_W = 250;
+  const USABLE_W = 1050;
   const maxSpacing = (n <= 1) ? 0 : (USABLE_W - CARD_W) / (n - 1);
   const spacing = Math.min(wantSpacing, maxSpacing);
 
@@ -1577,8 +1577,9 @@ function beginMulligan(side) {
   if (check) check.checked = true;
   renderAll();
 
-  // 「◯◯のマリガン」と大きく出してから、5枚を配る
+  // 「◯◯のマリガン」と大きく出してから、明るく戻して5枚を配る
   playBanner(DECKS[side].label + 'のマリガン', { hold: 1200 }, function () {
+    hideDim();
     const cards = Game.state.players[side].hand.slice();
     const items = cards.map(function (inst) {
       return {
@@ -1685,6 +1686,7 @@ function afterMulliganConfirmed(side, count) {
   const st = Game.state;
   const result = (count > 0) ? (count + '枚交換') : '交換なし';
 
+  showDim();   // 相手に渡すあいだは手札が見えないように暗くする
   playBanner(DECKS[side].label + '：' + result, {}, function () {
     if (side === st.firstSide) {
       beginMulligan(st.secondSide);              // 続けて後攻のマリガンへ
@@ -1698,9 +1700,12 @@ function afterMulliganConfirmed(side, count) {
 function finishMulligan() {
   const st = Game.state;
   play.mode = 'main';
-  // 手札は開いたまま、そのまま第1ターンへ入る
+
+  // 暗いうちに盤面を先攻のものにしてから、名前を出して明るく戻す
+  switchBoardTo(st.firstSide);
   playBanner(DECKS[st.firstSide].label + 'のターン', { hold: 1200 }, function () {
-    beginTurnFlow(st.firstSide);
+    hideDim();
+    setTimeout(function () { runTurnStart(st.firstSide); }, ms(350));
   });
 }
 
@@ -1964,7 +1969,8 @@ function highlightEffectSource(item, next) {
   el.classList.add('is-activating');
   openQuickDetail(instToSpec(item.source), el);
 
-  setTimeout(next, ms(520));
+  // 見せ終えてから、さらに少し間を置いて効果の解決へ
+  setTimeout(function () { setTimeout(next, ms(STEP_GAP)); }, ms(520));
 }
 
 /** 発動の強調を解く */
@@ -2035,7 +2041,8 @@ function runPendingEffects(done) {
   if (item.side === bottomSide()) keepHandOpen();
   renderAll();
 
-  // 発動するカードを持ち上げて光らせ、クイック詳細を見せてから解決へ
+  // 効果が起きてから 0.5秒 → カードを持ち上げて見せる → さらに 0.5秒 → 解決
+  setTimeout(function () {
   highlightEffectSource(item, function () {
     effectFlow = {
       side: item.side,
@@ -2060,6 +2067,7 @@ function runPendingEffects(done) {
       }, flow.eventCard);
     });
   });
+  }, ms(STEP_GAP));
 }
 
 /** 手札を拡大表示のままに保つ */
@@ -2262,6 +2270,10 @@ function goToEndPhase() {
   });
 }
 
+/** 画面を暗くする／戻す（ターン交代のとき） */
+function showDim() { document.getElementById('dim-screen').classList.add('is-on'); }
+function hideDim() { document.getElementById('dim-screen').classList.remove('is-on'); }
+
 /** 自動ターン終了 → 盤面の上下入れ替え → 次のターン案内（仕様書 25） */
 function autoEndTurn() {
   const next = Game.endTurn();
@@ -2275,10 +2287,13 @@ function autoEndTurn() {
   if (c) c.checked = false;
   renderAll();
 
-  // 「ターン終了」→「◯◯のターン」と続けて出してから、次のターンへ
+  // 画面を暗くしたまま「ターン終了」→ 盤面を入れ替え →「◯◯のターン」→ 明るく戻す
+  showDim();
   playBanner('ターン終了', {}, function () {
+    switchBoardTo(next);        // 暗いうちに上下を入れ替える
     playBanner(DECKS[next].label + 'のターン', { hold: 1200 }, function () {
-      beginTurnFlow(next);
+      hideDim();
+      setTimeout(function () { runTurnStart(next); }, ms(350));
     });
   });
 }
@@ -2292,18 +2307,30 @@ function autoEndTurn() {
  *   5. 1枚ドロー
  */
 function beginTurnFlow(side) {
+  switchBoardTo(side);
+  runTurnStart(side);
+}
+
+/**
+ * 盤面を次のプレイヤーのものに切り替える。
+ * 暗転しているあいだに呼ぶので、入れ替わる瞬間は見えません。
+ */
+function switchBoardTo(side) {
   view.locked = true;
   Game.beginTurn(side);
 
   // ターン開始から操作できるようになるまで、手札は拡大表示のままにする。
-  // 襲撃・開始時効果・気力回復・ドローの間もこの状態を保ちます。
   view.handExpanded = true;
   view.handSelected = -1;
   const check = document.getElementById('hand-expanded');
   if (check) check.checked = true;
 
   renderAll();
+}
 
+/** ターン開始の処理：襲撃 → 開始時効果 → 気力回復 → ドロー */
+function runTurnStart(side) {
+  view.locked = true;
   const info = Game.prepareAttack(side);
   if (info) playAttack(info, function () { afterAttack(side); });
   else afterAttack(side);
@@ -2774,6 +2801,34 @@ function appendConditionLine(parent, spec, className) {
   parent.appendChild(el);
 }
 
+/* ---------------------------------------------------------------------
+   画面が拡大されてしまうのを防ぐ
+   ---------------------------------------------------------------------
+   スマホの標準動作（素早い2回タップ、二本指の広げ操作）で画面が拡大され、
+   そのまま戻らなくなることがあるため、まとめて止めます。
+   ボタンや入力欄の上では止めないので、押したり入力したりはできます。
+   --------------------------------------------------------------------- */
+function blockZoomGestures() {
+  function isControl(target) {
+    return target && target.closest && target.closest('button, input, textarea, select');
+  }
+
+  // 素早い2回タップ
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', function (e) {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 320 && !isControl(e.target)) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+
+  document.addEventListener('dblclick', function (e) { e.preventDefault(); }, { passive: false });
+
+  // 二本指の広げ操作（iOS）
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
+    document.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
+  });
+}
+
 /* =====================================================================
    ログ・トラッシュ・設定の画面
    ===================================================================== */
@@ -3112,6 +3167,7 @@ function setupPanel() {
    起動
    ===================================================================== */
 function init() {
+  blockZoomGestures();   // スマホで画面が拡大されないようにする
   fitStage();
   setupPanel();
   renderAll();

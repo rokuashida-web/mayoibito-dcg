@@ -20,7 +20,7 @@
        spacing … カード同士の横の間隔（広いほど見やすい）
        arc     … 弧の深さ。中央のカードが持ち上がる量
        spread  … 端のカードの傾き（合計角度）*/
-  --fan-spacing: 100px;
+  --fan-spacing: 120px;
   --fan-arc: 30px;
   --fan-spread: 20deg;
   --fan-lift: 35px;             /* 選択したカードのせり出し量 */
@@ -32,6 +32,12 @@
      値を大きくするほど、場の要素が一体のまま上へ動きます。
      並びのバランスは崩れません（全部が同じ量だけ動くため）。 */
   --play-shift: 75px;
+
+  /* 盤面の各段の位置。詰めるとカードを大きくできます。 */
+  --row-opp-normal: 250px;
+  --row-opp-track: 495px;
+  --row-self-track: 880px;
+  --row-self-normal: 1300px;
 
   /* ---- フィールドカードの表示の大きさ ----
      相手側は少し小さくして、奥にある感じを出します。 */
@@ -88,6 +94,9 @@ html, body {
 /* =====================================================================
    画面枠：9:16 を保ったまま中央へ収める
    ===================================================================== */
+/* どの要素でも「素早い2回タップで拡大」が起きないようにする */
+* { touch-action: manipulation; }
+
 #viewport {
   position: fixed;
   inset: 0;
@@ -250,37 +259,37 @@ body.hide-numbers .card__no { display: none; }
 body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
 
 /* --- 相手の通常盤面（奥・小さめ） --- */
-.zone--opp-normal-human  { left: 101px; top: calc(250px - var(--play-shift)); width: 398px; }
-.zone--opp-normal-youkai { left: 581px; top: calc(250px - var(--play-shift)); width: 398px; }
+.zone--opp-normal-human  { left: 85px; top: calc(var(--row-opp-normal) - var(--play-shift)); width: 430px; }
+.zone--opp-normal-youkai { left: 565px; top: calc(var(--row-opp-normal) - var(--play-shift)); width: 430px; }
 .zone--opp-normal-human .card,
 .zone--opp-normal-youkai .card {
-  width: var(--opp-normal-w, 148px);
-  font-size: var(--opp-normal-w, 148px);   /* 現在値バッジの文字がこの幅に連動する */
+  width: var(--opp-normal-w, 160px);
+  font-size: var(--opp-normal-w, 160px);   /* 現在値バッジの文字がこの幅に連動する */
 }
 
 /* --- 相手の追跡カード（左：追跡されている人間／右：追跡している怪異） --- */
-.zone--opp-track-human  { left: 289px; top: calc(500px - var(--play-shift)); width: 215px; }
-.zone--opp-track-youkai { left: 583px; top: calc(500px - var(--play-shift)); width: 215px; }
+.zone--opp-track-human  { left: 280px; top: calc(var(--row-opp-track) - var(--play-shift)); width: 232px; }
+.zone--opp-track-youkai { left: 574px; top: calc(var(--row-opp-track) - var(--play-shift)); width: 232px; }
 .zone--opp-track-human .card,
-.zone--opp-track-youkai .card { width: 215px; font-size: 215px; }
+.zone--opp-track-youkai .card { width: 232px; font-size: 232px; }
 
 /* --- 自分の追跡カード（左：追跡している怪異／右：追跡されている人間） --- */
-.zone--self-track-youkai { left: 285px; top: calc(925px - var(--play-shift)); width: 225px; }
-.zone--self-track-human  { left: 578px; top: calc(925px - var(--play-shift)); width: 225px; }
+.zone--self-track-youkai { left: 276px; top: calc(var(--row-self-track) - var(--play-shift)); width: 243px; }
+.zone--self-track-human  { left: 569px; top: calc(var(--row-self-track) - var(--play-shift)); width: 243px; }
 .zone--self-track-youkai .card,
-.zone--self-track-human .card { width: 225px; font-size: 225px; }
+.zone--self-track-human .card { width: 243px; font-size: 243px; }
 
 /* --- 自分の通常盤面（手前・大きめ） --- */
-.zone--self-normal-youkai { left: 66px;  top: calc(1355px - var(--play-shift)); width: 468px; }
-.zone--self-normal-human  { left: 546px; top: calc(1355px - var(--play-shift)); width: 468px; }
+.zone--self-normal-youkai { left: 21px;  top: calc(var(--row-self-normal) - var(--play-shift)); width: 510px; }
+.zone--self-normal-human  { left: 549px; top: calc(var(--row-self-normal) - var(--play-shift)); width: 510px; }
 .zone--self-normal-youkai .card,
 .zone--self-normal-human .card {
-  width: var(--self-normal-w, 175px);
-  font-size: var(--self-normal-w, 175px);
+  width: var(--self-normal-w, 189px);
+  font-size: var(--self-normal-w, 189px);
 }
 /* カードが0枚でもドロップ先として掴めるよう、高さを確保しておく */
 .zone--self-normal-youkai,
-.zone--self-normal-human { min-height: calc(var(--self-normal-w, 175px) * 1.3968); }
+.zone--self-normal-human { min-height: calc(var(--self-normal-w, 189px) * 1.3968); }
 
 /* 奥のカードを少し小さく見せる（遠近感の補助） */
 .zone--opp-normal-human,
@@ -389,18 +398,18 @@ body.hide-numbers .ui-box::after { display: none; }
 
 /* --- 気力（4 / 18） --- */
 .energy-box {
-  width: 160px;
-  height: 108px;
+  width: 180px;
+  height: 124px;
   flex-direction: column;
   gap: 2px;
   background: #0e1526;
   border: 2px solid var(--line);
   border-radius: 10px;
 }
-.energy-box__label { font-size: 20px; color: #9fb0cf; }
-.energy-box__value { font-size: 44px; font-weight: bold; line-height: 1; }
-.energy-box--self { left: 5px;   top: 1812px; }
-.energy-box--opp  { left: 915px; top: 0px; }
+.energy-box__label { font-size: 24px; color: #9fb0cf; }
+.energy-box__value { font-size: 52px; font-weight: bold; line-height: 1; }
+.energy-box--self { left: 5px;   top: 1796px; }
+.energy-box--opp  { left: 900px; top: 0px; }
 
 /* --- トラッシュ・ログ・メイン終了（六角形） --- */
 .hexbtn {
@@ -411,17 +420,17 @@ body.hide-numbers .ui-box::after { display: none; }
   text-align: center;
   padding: 0 10px;
 }
-.hexbtn--self-trash { left: 202px; top: 1858px; width: 160px; height: 62px; font-size: 19px; }
-.hexbtn--opp-trash  { left: 718px; top: 0px;    width: 160px; height: 62px; font-size: 19px; }
-.hexbtn--log  { left: 8px;   top: calc(1095px - var(--play-shift)); width: 143px; height: 93px; font-size: 30px; }
-.hexbtn--main { left: 898px; top: calc(920px - var(--play-shift));  width: 160px; height: 108px; font-size: 22px; }
+.hexbtn--self-trash { left: 195px; top: 1834px; width: 200px; height: 86px; font-size: 26px; }
+.hexbtn--opp-trash  { left: 690px; top: 0px;    width: 200px; height: 86px; font-size: 26px; }
+.hexbtn--log  { left: 8px;   top: calc(990px - var(--play-shift));  width: 170px; height: 120px; font-size: 36px; }
+.hexbtn--main { left: 870px; top: calc(780px - var(--play-shift));  width: 200px; height: 140px; font-size: 30px; }
 
 /* --- 設定（丸） --- */
 .roundbtn {
   left: 12px;
-  top: calc(928px - var(--play-shift));
-  width: 117px;
-  height: 117px;
+  top: calc(830px - var(--play-shift));
+  width: 150px;
+  height: 150px;
   border-radius: 50%;
   background: #223257;
   border: 2px solid var(--line);
@@ -489,8 +498,8 @@ body.hide-numbers .ui-box::after { display: none; }
   flex-direction: column;
   gap: 4px;
 }
-.deck-box--self { left: 893px; top: calc(1040px - var(--play-shift)); }
-.deck-box--opp  { left: 12px;  top: calc(620px - var(--play-shift)); }
+.deck-box--self { left: 893px; top: calc(940px - var(--play-shift)); }
+.deck-box--opp  { left: 12px;  top: calc(560px - var(--play-shift)); }
 .deck-box__count {
   font-size: 21px;
   color: #cfe0ff;
@@ -517,8 +526,8 @@ body.hide-numbers .ui-box::after { display: none; }
 
 /* --- 簡略手札（1 / 21）裏向きの重ね＋枚数 --- */
 .hand-mini {
-  width: 350px;
-  height: 108px;
+  width: 380px;
+  height: 124px;
   gap: 10px;
   background: rgba(14, 21, 38, 0.9);
   border: 2px solid var(--line);
@@ -526,7 +535,7 @@ body.hide-numbers .ui-box::after { display: none; }
   padding: 0 12px;
   cursor: pointer;
 }
-.hand-mini--self { left: 700px; top: 1812px; }
+.hand-mini--self { left: 700px; top: 1796px; }
 .hand-mini--opp  { left: 30px;  top: 0px; }
 .hand-mini__stack {
   position: relative;
@@ -546,7 +555,7 @@ body.hide-numbers .ui-box::after { display: none; }
   border-radius: 5px;
 }
 .hand-mini__count {
-  font-size: 40px;
+  font-size: 46px;
   font-weight: bold;
   min-width: 62px;
   text-align: right;
@@ -638,6 +647,18 @@ body.hide-numbers .ui-box::after { display: none; }
   border-style: solid;
   background-color: rgba(255, 211, 107, 0.16);
 }
+
+/* ターン交代のときに画面を暗くする幕（大きな文字より後ろ） */
+#dim-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 144;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+#dim-screen.is-on { opacity: 0.92; }
 
 /* =====================================================================
    ログ・トラッシュ・設定で使い回す画面
@@ -1187,10 +1208,10 @@ body.hide-numbers .ui-box::after { display: none; }
 
 .fan-card {
   position: absolute;
-  left: calc(50% - 95px);
+  left: calc(50% - 125px);
   bottom: var(--fan-bottom);
-  width: 190px;
-  font-size: 190px;
+  width: 250px;
+  font-size: 250px;
   transform-origin: 50% 100%;   /* カードの下端を軸に少しだけ傾ける */
   transition: transform 0.18s ease, filter 0.18s ease;
   pointer-events: auto;
