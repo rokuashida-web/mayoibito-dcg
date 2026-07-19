@@ -154,16 +154,49 @@ function attachPointer(el, handlers) {
   let timer = null;
   let longFired = false;
   let dragging = false;
+  let scrubbing = false;   // 横になぞって選んでいる最中か
+  let docMove = null, docUp = null;
 
   function clearTimer() {
     if (timer !== null) { clearTimeout(timer); timer = null; }
+  }
+
+  function stopDocListeners() {
+    if (docMove) { document.removeEventListener('pointermove', docMove); docMove = null; }
+    if (docUp) {
+      document.removeEventListener('pointerup', docUp);
+      document.removeEventListener('pointercancel', docUp);
+      docUp = null;
+    }
+  }
+
+  /**
+   * 「なぞって選ぶ」を始める。
+   * なぞっている間に手札が描き直されて指の下のカードが作り替わっても
+   * 追い続けられるよう、画面全体で指の動きを受け取ります。
+   */
+  function startScrub(e) {
+    scrubbing = true;
+    if (el.releasePointerCapture) {
+      try { el.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+    docMove = function (ev) {
+      if (ev.pointerId !== pointerId) return;
+      if (handlers.onScrubMove) handlers.onScrubMove(ev);
+    };
+    docUp = function (ev) { if (ev.pointerId === pointerId) finish(ev); };
+    document.addEventListener('pointermove', docMove);
+    document.addEventListener('pointerup', docUp);
+    document.addEventListener('pointercancel', docUp);
+
+    if (handlers.onScrubMove) handlers.onScrubMove(e);
   }
 
   el.addEventListener('pointerdown', function (e) {
     if (pointerId !== null) return;      // 2本目の指は無視する
     pointerId = e.pointerId;
     startX = e.clientX; startY = e.clientY;
-    longFired = false; dragging = false;
+    longFired = false; dragging = false; scrubbing = false;
     // 指がカードの外へ出ても操作を追い続ける
     if (el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (err) {} }
 
@@ -180,10 +213,16 @@ function attachPointer(el, handlers) {
     if (pointerId === null || e.pointerId !== pointerId) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
-    if (!dragging && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
-      dragging = true;
+    if (!dragging && !scrubbing && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
       clearTimer();                       // 動いたら長押しは中止
-      if (handlers.onDragStart) handlers.onDragStart(e);
+      // 横向きに大きく動いたときは「なぞって選ぶ」操作にする。
+      // 縦向きならこれまでどおりカードを持ち上げるドラッグ。
+      if (handlers.onScrubMove && Math.abs(dx) > Math.abs(dy)) {
+        startScrub(e);
+      } else {
+        dragging = true;
+        if (handlers.onDragStart) handlers.onDragStart(e);
+      }
     }
     if (dragging && handlers.onDragMove) handlers.onDragMove(e);
   });
@@ -191,10 +230,12 @@ function attachPointer(el, handlers) {
   function finish(e) {
     if (pointerId === null || (e && e.pointerId !== pointerId)) return;
     clearTimer();
-    const wasTap = !dragging && !longFired;
+    stopDocListeners();
+    const wasTap = !dragging && !scrubbing && !longFired;
     const wasDrag = dragging;
     pointerId = null;
     dragging = false;
+    scrubbing = false;
     if (wasDrag && handlers.onDragEnd) handlers.onDragEnd(e);
     if (wasTap && handlers.onTap) handlers.onTap();
   }
@@ -228,13 +269,6 @@ function makeCard(spec) {
   }
   if (spec.cardId && isLandscapeCard(spec.cardId)) el.classList.add('card--landscape');
 
-  if (spec.no != null) {
-    const badge = document.createElement('div');
-    badge.className = 'card__no';
-    badge.textContent = String(spec.no);
-    el.appendChild(badge);
-  }
-
   const label = document.createElement('div');
   label.className = 'card__label';
   label.textContent = spec.label || '';
@@ -261,6 +295,8 @@ function makeCard(spec) {
 /** 盤面・手札のカードに、タップと長押しの操作を割り当てる */
 function attachCardInput(el, spec, place, zoneId) {
   attachPointer(el, {
+    // 手札を横になぞると、指の下のカードが選ばれる
+    onScrubMove: (place === 'hand') ? scrubHandSelection : null,
     onTap: function () {
       // 効果の対象選択中だけは、ロック中でもカードを選べるようにする
       if (view.locked && !boardPick) return;   // 演出中は操作を受け付けない（仕様書 20-1）
@@ -403,13 +439,10 @@ function renderBoard() {
   root.style.setProperty('--self-normal-w', SELF_CARD_W[Math.min(3, selfMax)] + 'px');
   root.style.setProperty('--opp-normal-w',  OPP_CARD_W[Math.min(3, oppMax)] + 'px');
 
-  function tag(list, no) {
-    return list.map(function (c) { return Object.assign({}, c, { no: no }); });
-  }
-  fillZone('self-normal-youkai', tag(view.selfYoukai, 16));
-  fillZone('self-normal-human',  tag(view.selfHuman,  17));
-  fillZone('opp-normal-youkai',  tag(view.oppYoukai,  6));
-  fillZone('opp-normal-human',   tag(view.oppHuman,   5));
+  fillZone('self-normal-youkai', view.selfYoukai);
+  fillZone('self-normal-human',  view.selfHuman);
+  fillZone('opp-normal-youkai',  view.oppYoukai);
+  fillZone('opp-normal-human',   view.oppHuman);
 
   // 枚数を要素に持たせておく（枚数別の見た目をCSSで足せるようにするため）
   const selfTotal = view.selfYoukai.length + view.selfHuman.length;
@@ -700,16 +733,10 @@ function renderFan() {
     // 見本のときはカードIDの文字列、ゲーム中は本物のカード（インスタンス）
     const entry = view.hand[i];
     const isInstance = (entry && typeof entry === 'object');
-    const spec = {
-      cardId: isInstance ? entry.cardId : entry,
-      owner: isInstance ? (entry.owner || 'village') : 'village',
-      label: '手札',
-      handIndex: i,
-      inst: isInstance ? entry : null,
-      uid: isInstance ? entry.uid : undefined,
-    };
+    const spec = handSpecAt(i);
     const card = makeCard(spec);
     card.classList.add('fan-card');
+    card.dataset.handIndex = String(i);   // なぞって選ぶときに使う
 
     // いま出せないカード（気力不足・場が上限など）は選んでも光らせない
     if (play.active && isInstance && Game.state && !Game.state.gameOver &&
@@ -946,10 +973,8 @@ function applyCardBack() {
 /** フィールド枠に実際のカード画像を入れる */
 function applyFieldImages() {
   // ゲーム中は、その陣営が実際に持っているフィールドカードを出す
-  const selfId = (play.active && Game.state)
-    ? Game.state.players[bottomSide()].field.cardId : 'field_village';
-  const oppId = (play.active && Game.state)
-    ? Game.state.players[topSide()].field.cardId : 'field_mansion';
+  const selfId = fieldSpecFor('self').cardId;
+  const oppId = fieldSpecFor('opp').cardId;
 
   const pairs = [
     ['.field-box--self .field-box__card', selfId],
@@ -1407,6 +1432,17 @@ const STEP_GAP = 500;
 
 /* 演出の速さ。設定画面で変えられます（1＝標準、小さいほど速い） */
 let speedScale = 1;
+
+/* 左右のレーンを入れ替えるか。設定画面で変えられます。
+   反転した配置のほうが操作しやすいという判断で、こちらを既定にしています。 */
+let mirrorLanes = true;
+
+/** 左右の入れ替えを画面に反映する */
+function applyMirrorLanes() {
+  document.body.classList.toggle('mirror-lanes', mirrorLanes);
+  renderAll();
+  renderArrows();
+}
 
 /** 演出の長さを、いまの速さ設定に合わせて直す */
 function ms(value) {
@@ -1936,6 +1972,22 @@ function finishBoardPick(inst) {
 
 /* 効果が発動しているカード。描き直しても強調が消えないよう控えておく。 */
 let activatingUid = null;
+
+/**
+ * フィールドカードの中身を、そのときの盤面の向きから求める。
+ * @param which 'self'（画面下側）または 'opp'（画面上側）
+ */
+function fieldSpecFor(which) {
+  if (play.active && Game.state) {
+    const side = (which === 'self') ? bottomSide() : topSide();
+    const inst = Game.state.players[side].field;
+    if (inst) return { cardId: inst.cardId, owner: side, inst: inst };
+  }
+  // ゲーム前の見本表示
+  return (which === 'self')
+    ? { cardId: 'field_village', owner: 'village', inst: null }
+    : { cardId: 'field_mansion', owner: 'mansion', inst: null };
+}
 
 /** 効果の発生源のカード要素を探す */
 function findCardElement(inst) {
@@ -2468,6 +2520,44 @@ function handRightPointFor(side) {
   return handPointFor(side);
 }
 
+/** 手札の i 枚目のカード情報 */
+function handSpecAt(i) {
+  const entry = view.hand[i];
+  const isInstance = (entry && typeof entry === 'object');
+  return {
+    cardId: isInstance ? entry.cardId : entry,
+    owner: isInstance ? (entry.owner || 'village') : 'village',
+    label: '手札',
+    handIndex: i,
+    inst: isInstance ? entry : null,
+    uid: isInstance ? entry.uid : undefined,
+  };
+}
+
+/**
+ * 手札を横になぞったときに、指の下のカードを選び直す。
+ * なぞっている間は拡大詳細を出しません（長押しは移動の時点で中止されます）。
+ */
+function scrubHandSelection(e) {
+  if (!view.handExpanded || view.locked) return;
+  if (play.mode === 'mulligan') return;   // マリガン中は交換の選択なので触らない
+
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  const card = (under && under.closest) ? under.closest('#hand-fan .fan-card') : null;
+  if (!card) return;
+
+  const idx = parseInt(card.dataset.handIndex, 10);
+  if (isNaN(idx) || idx === view.handSelected) return;
+
+  view.handSelected = idx;
+  syncPanel();
+  renderFan();
+
+  // 描き直したあとの要素に合わせて詳細を出し直す
+  const shown = document.querySelector('#hand-fan .fan-card[data-hand-index="' + idx + '"]');
+  if (shown) openQuickDetail(handSpecAt(idx), shown);
+}
+
 /** 手札の中の1枚の位置。見つからなければ手札全体の位置を返す */
 function handCardPoint(side, inst) {
   if (side === bottomSide() && inst && inst.uid) {
@@ -2929,7 +3019,33 @@ function openSettings() {
     row1.appendChild(choices);
     body.appendChild(row1);
 
-    // 2. カードの裏面（画像が未提供のあいだは案内だけ）
+    // 2. 左右のレーンの入れ替え
+    const rowLane = document.createElement('div');
+    rowLane.className = 'set__row';
+    rowLane.innerHTML = '<div class="set__label">左右の配置</div>' +
+                        '<div class="set__note">盤面の左右を入れ替えます。' +
+                        '利き手に合わせて選んでください。</div>';
+    const laneChoices = document.createElement('div');
+    laneChoices.className = 'set__choices';
+    [['標準', false], ['左右を反転', true]].forEach(function (pair) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'set__choice' + (mirrorLanes === pair[1] ? ' is-on' : '');
+      btn.textContent = pair[0];
+      btn.addEventListener('click', function () {
+        mirrorLanes = pair[1];
+        laneChoices.querySelectorAll('.set__choice').forEach(function (b) {
+          b.classList.remove('is-on');
+        });
+        btn.classList.add('is-on');
+        applyMirrorLanes();
+      });
+      laneChoices.appendChild(btn);
+    });
+    rowLane.appendChild(laneChoices);
+    body.appendChild(rowLane);
+
+    // 3. カードの裏面（画像が未提供のあいだは案内だけ）
     const row2 = document.createElement('div');
     row2.className = 'set__row';
     row2.innerHTML = '<div class="set__label">今の対戦</div>' +
@@ -3155,9 +3271,6 @@ function setupPanel() {
     root.style.setProperty('--field-h-opp', v + 'px');
   });
 
-  bindCheck('show-numbers', function (b) {
-    document.body.classList.toggle('hide-numbers', !b);
-  });
   bindCheck('show-guides', function (b) {
     document.body.classList.toggle('show-guides', b);
   });
@@ -3168,6 +3281,7 @@ function setupPanel() {
    ===================================================================== */
 function init() {
   blockZoomGestures();   // スマホで画面が拡大されないようにする
+  document.body.classList.toggle('mirror-lanes', mirrorLanes);
   fitStage();
   setupPanel();
   renderAll();
@@ -3213,18 +3327,19 @@ function init() {
   const attackBtn = document.getElementById('btn-attack-demo');
   if (attackBtn) attackBtn.addEventListener('click', playAttackEffect);
 
-  // フィールドカードもタップで詳細、長押しで拡大詳細を出せるようにする
-  [
-    ['.field-box--self', 'field_village', 'village'],
-    ['.field-box--opp', 'field_mansion', 'mansion'],
-  ].forEach(function (item) {
+  // フィールドカードもタップで詳細、長押しで拡大詳細を出せるようにする。
+  // どちらの陣営のカードかは盤面の向きで変わるので、押されたときに読み直す。
+  // （決め打ちにすると、上下が入れ替わったときに相手のカードの詳細が出てしまう）
+  [['.field-box--self', 'self'], ['.field-box--opp', 'opp']].forEach(function (item) {
     const box = document.querySelector(item[0]);
     if (!box) return;
+    const which = item[1];
     const valueEl = box.querySelector('.field-box__value');
+
     attachCardInput(box, {
-      cardId: item[1],
-      owner: item[2],
-      // ロスト数は表示中の値をそのまま読む（Stage H で本物の値につながる）
+      get cardId() { return fieldSpecFor(which).cardId; },
+      get owner() { return fieldSpecFor(which).owner; },
+      get inst() { return fieldSpecFor(which).inst; },
       get lostText() { return valueEl ? valueEl.textContent : ''; },
     }, 'board');
   });

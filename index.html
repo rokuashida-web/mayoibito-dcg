@@ -12,7 +12,6 @@
      Stage A：静的レイアウト確認用の画面
      ---------------------------------------------------------------------
      ・ゲームのルール処理には、まだ一切つないでいません
-     ・カードはすべて仮の枠（番号つき）です
      ・下の「調整パネル」で枚数や見え方を変えて確認できます
      ・座標は 1080×1920 の設計座標をそのまま使い、
        画面サイズに合わせて全体を等倍で縮小しています
@@ -28,20 +27,20 @@
       <svg id="pursuit-arrows" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
 
       <!-- --- 相手の通常盤面：左＝相手の人間(5) / 右＝相手の怪異(6) --- -->
-      <div class="zone zone--opp-normal-human" id="opp-normal-human" data-no="5"></div>
-      <div class="zone zone--opp-normal-youkai" id="opp-normal-youkai" data-no="6"></div>
+      <div class="zone zone--opp-normal-human" id="opp-normal-human"></div>
+      <div class="zone zone--opp-normal-youkai" id="opp-normal-youkai"></div>
 
       <!-- --- 相手の追跡カード：左＝追跡されている人間(8) / 右＝追跡している怪異(9) --- -->
-      <div class="zone zone--opp-track-human" id="opp-track-human" data-no="8"></div>
-      <div class="zone zone--opp-track-youkai" id="opp-track-youkai" data-no="9"></div>
+      <div class="zone zone--opp-track-human" id="opp-track-human"></div>
+      <div class="zone zone--opp-track-youkai" id="opp-track-youkai"></div>
 
       <!-- --- 自分の追跡カード：左＝追跡している怪異(12) / 右＝追跡されている人間(13) --- -->
-      <div class="zone zone--self-track-youkai" id="self-track-youkai" data-no="12"></div>
-      <div class="zone zone--self-track-human" id="self-track-human" data-no="13"></div>
+      <div class="zone zone--self-track-youkai" id="self-track-youkai"></div>
+      <div class="zone zone--self-track-human" id="self-track-human"></div>
 
       <!-- --- 自分の通常盤面：左＝自分の怪異(16) / 右＝自分の人間(17) --- -->
-      <div class="zone zone--self-normal-youkai" id="self-normal-youkai" data-no="16"></div>
-      <div class="zone zone--self-normal-human" id="self-normal-human" data-no="17"></div>
+      <div class="zone zone--self-normal-youkai" id="self-normal-youkai"></div>
+      <div class="zone zone--self-normal-human" id="self-normal-human"></div>
 
     </div>
 
@@ -49,27 +48,27 @@
     <div class="band band--top"></div>
 
     <!-- 1 相手の簡略手札（裏向きの重ね＋枚数） -->
-    <div class="ui-box hand-mini hand-mini--opp" id="opp-hand-mini" data-no="1">
+    <div class="ui-box hand-mini hand-mini--opp" id="opp-hand-mini">
       <div class="hand-mini__stack"></div>
       <div class="hand-mini__count">0</div>
     </div>
 
     <!-- 2 相手のフィールドカード＋相手のロスト数 -->
-    <div class="ui-box field-box field-box--opp" data-no="2">
+    <div class="ui-box field-box field-box--opp">
       <div class="field-box__card"><span>フィールド</span></div>
       <div class="field-box__lost"><span class="field-box__label">ロスト</span><span class="field-box__value">2 / 4</span></div>
     </div>
 
     <!-- 3 相手のトラッシュ -->
-    <div class="ui-box hexbtn hexbtn--opp-trash" id="btn-opp-trash" data-no="3"><span>トラッシュ 5</span></div>
+    <div class="ui-box hexbtn hexbtn--opp-trash" id="btn-opp-trash"><span>トラッシュ 5</span></div>
 
     <!-- 4 相手の気力数 -->
-    <div class="ui-box energy-box energy-box--opp" data-no="4">
+    <div class="ui-box energy-box energy-box--opp">
       <span class="energy-box__label">気力</span><span class="energy-box__value">4</span>
     </div>
 
     <!-- 7 相手の山札（枚数は常時表示） -->
-    <div class="ui-box deck-box deck-box--opp" data-no="7">
+    <div class="ui-box deck-box deck-box--opp">
       <div class="deck-box__count">残り 27枚</div>
       <div class="deck-box__card"><span>山札</span></div>
     </div>
@@ -78,36 +77,36 @@
     <div class="band band--bottom"></div>
 
     <!-- 10 設定（リタイアなど） -->
-    <div class="ui-box roundbtn" id="btn-settings" data-no="10"><span>設定</span></div>
+    <div class="ui-box roundbtn" id="btn-settings"><span>設定</span></div>
 
     <!-- 11 ログ（経過表示もこの先） -->
-    <div class="ui-box hexbtn hexbtn--log" id="btn-log" data-no="11"><span>ログ</span></div>
+    <div class="ui-box hexbtn hexbtn--log" id="btn-log"><span>ログ</span></div>
 
     <!-- 14 メイン終了／対象確定 -->
-    <div class="ui-box hexbtn hexbtn--main" id="btn-main" data-no="14"><span>ターン終了</span></div>
+    <div class="ui-box hexbtn hexbtn--main" id="btn-main"><span>ターン終了</span></div>
 
     <!-- 15 自分の山札（枚数は常時表示） -->
-    <div class="ui-box deck-box deck-box--self" data-no="15">
+    <div class="ui-box deck-box deck-box--self">
       <div class="deck-box__count">残り 31枚</div>
       <div class="deck-box__card"><span>山札</span></div>
     </div>
 
     <!-- 18 自分の気力数 -->
-    <div class="ui-box energy-box energy-box--self" data-no="18">
+    <div class="ui-box energy-box energy-box--self">
       <span class="energy-box__label">気力</span><span class="energy-box__value">6</span>
     </div>
 
     <!-- 19 自分のトラッシュ -->
-    <div class="ui-box hexbtn hexbtn--self-trash" id="btn-self-trash" data-no="19"><span>トラッシュ 8</span></div>
+    <div class="ui-box hexbtn hexbtn--self-trash" id="btn-self-trash"><span>トラッシュ 8</span></div>
 
     <!-- 20 自分のフィールドカード＋自分のロスト数 -->
-    <div class="ui-box field-box field-box--self" data-no="20">
+    <div class="ui-box field-box field-box--self">
       <div class="field-box__card"><span>フィールド</span></div>
       <div class="field-box__lost"><span class="field-box__label">ロスト</span><span class="field-box__value">4 / 5</span></div>
     </div>
 
     <!-- 21 自分の簡略手札（タップで拡大手札へ） -->
-    <div class="ui-box hand-mini hand-mini--self" id="self-hand-mini" data-no="21">
+    <div class="ui-box hand-mini hand-mini--self" id="self-hand-mini">
       <div class="hand-mini__stack"></div>
       <div class="hand-mini__count">0</div>
     </div>
@@ -257,7 +256,6 @@
 
   <div class="panel__group">
     <div class="panel__head">表示</div>
-    <label><input type="checkbox" id="show-numbers" checked> 番号を表示</label>
     <label><input type="checkbox" id="show-guides"> 領域の枠を表示</label>
   </div>
 </div>

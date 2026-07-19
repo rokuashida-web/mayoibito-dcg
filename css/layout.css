@@ -225,24 +225,6 @@ html, body {
   color: #fff;
 }
 
-.card__no {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 6px;
-  border-radius: 17px;
-  background: #101018;
-  color: #fff;
-  font-size: 19px;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-body.hide-numbers .card__no { display: none; }
-
 /* =====================================================================
    盤面のゾーン
    ---------------------------------------------------------------------
@@ -290,6 +272,17 @@ body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
 /* カードが0枚でもドロップ先として掴めるよう、高さを確保しておく */
 .zone--self-normal-youkai,
 .zone--self-normal-human { min-height: calc(var(--self-normal-w, 189px) * 1.3968); }
+
+/* 左右のレーンを入れ替える（設定画面の「左右を反転」）。
+   置き場所の役割はそのままに、左右の位置だけを取り替えます。 */
+body.mirror-lanes .zone--opp-normal-human   { left: 565px; }
+body.mirror-lanes .zone--opp-normal-youkai  { left: 85px; }
+body.mirror-lanes .zone--opp-track-human    { left: 574px; }
+body.mirror-lanes .zone--opp-track-youkai   { left: 280px; }
+body.mirror-lanes .zone--self-track-youkai  { left: 569px; }
+body.mirror-lanes .zone--self-track-human   { left: 276px; }
+body.mirror-lanes .zone--self-normal-youkai { left: 549px; }
+body.mirror-lanes .zone--self-normal-human  { left: 21px; }
 
 /* 奥のカードを少し小さく見せる（遠近感の補助） */
 .zone--opp-normal-human,
@@ -376,26 +369,6 @@ body.show-guides .zone { outline: 1px dashed rgba(255, 211, 107, 0.55); }
 }
 body.show-guides .ui-box { outline: 1px dashed rgba(122, 209, 255, 0.5); }
 
-/* 番号バッジ（Stage A の確認用） */
-.ui-box::after {
-  content: attr(data-no);
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  min-width: 32px;
-  height: 32px;
-  border-radius: 16px;
-  background: var(--accent);
-  color: #201f30;
-  font-size: 19px;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 5;
-}
-body.hide-numbers .ui-box::after { display: none; }
-
 /* --- 気力（4 / 18） --- */
 .energy-box {
   width: 180px;
@@ -422,7 +395,7 @@ body.hide-numbers .ui-box::after { display: none; }
 }
 .hexbtn--self-trash { left: 195px; top: 1834px; width: 200px; height: 86px; font-size: 26px; }
 .hexbtn--opp-trash  { left: 690px; top: 0px;    width: 200px; height: 86px; font-size: 26px; }
-.hexbtn--log  { left: 8px;   top: calc(990px - var(--play-shift));  width: 170px; height: 120px; font-size: 36px; }
+.hexbtn--log  { left: 8px;   top: calc(1020px - var(--play-shift)); width: 170px; height: 120px; font-size: 36px; }
 .hexbtn--main { left: 870px; top: calc(780px - var(--play-shift));  width: 200px; height: 140px; font-size: 30px; }
 
 /* --- 設定（丸） --- */
@@ -499,7 +472,7 @@ body.hide-numbers .ui-box::after { display: none; }
   gap: 4px;
 }
 .deck-box--self { left: 893px; top: calc(940px - var(--play-shift)); }
-.deck-box--opp  { left: 12px;  top: calc(560px - var(--play-shift)); }
+.deck-box--opp  { left: 12px;  top: calc(530px - var(--play-shift)); }
 .deck-box__count {
   font-size: 21px;
   color: #cfe0ff;
